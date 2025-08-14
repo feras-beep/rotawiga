@@ -708,7 +708,7 @@
                     <p><strong>Required:</strong> ${requirement} | <strong>Assigned:</strong> ${doctors.length}</p>
                     <ul class="doctor-list">
                         ${doctors.map(doctor => `
-                            <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${doctor.name} ${doctor.preferred ? '⭐' : ''}</li>
+                            <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${doctor.name}</li>
                         `).join('')}
                         ${isUnderStaffed ? '<li style="color: #e74c3c; font-style: italic;">⚠️ Needs locum coverage</li>' : ''}
                     </ul>
@@ -728,7 +728,7 @@
                     <p><strong>Required:</strong> ${requirement} | <strong>Assigned:</strong> ${doctors.length}</p>
                     <ul class="doctor-list">
                         ${doctors.map(doctor => `
-                            <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${doctor.name} ${doctor.preferred ? '⭐' : ''}</li>
+                            <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${doctor.name}</li>
                         `).join('')}
                         ${isUnderStaffed ? '<li style="color: #e74c3c; font-style: italic;">⚠️ Needs coverage</li>' : ''}
                     </ul>
@@ -746,6 +746,13 @@
                     <button class="button" onclick="previousDay()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">◀ Previous</button>
                     <div id="currentDayDisplay" style="text-align: center; font-size: 1.2rem; font-weight: bold;"></div>
                     <button class="button" onclick="nextDay()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">Next ▶</button>
+                </div>
+                <div style="display: flex; justify-content: center; gap: 10px; margin: 15px 0; flex-wrap: wrap;">
+                    <button class="button" onclick="goToDay(0)" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); font-size: 0.9rem;">Mon</button>
+                    <button class="button" onclick="goToDay(1)" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); font-size: 0.9rem;">Tue</button>
+                    <button class="button" onclick="goToDay(2)" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); font-size: 0.9rem;">Wed</button>
+                    <button class="button" onclick="goToDay(3)" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); font-size: 0.9rem;">Thu</button>
+                    <button class="button" onclick="goToDay(4)" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); font-size: 0.9rem;">Fri</button>
                 </div>
                 <div id="currentDayAllocation" style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; font-family: monospace; white-space: pre-line; font-size: 0.9rem;"></div>
                 <button class="button" onclick="copyCurrentDay()" style="background: white; color: #6c5ce7; margin-top: 10px;">📋 Copy Today's Message</button>
@@ -793,6 +800,18 @@
                 const message = generateDailyMessageText(formattedDate, dayName);
                 allocationDiv.textContent = message;
             }
+
+            // Update day button highlighting
+            const dayButtons = document.querySelectorAll('[onclick^="goToDay"]');
+            dayButtons.forEach((button, index) => {
+                if (index === currentDayIndex) {
+                    button.style.background = 'rgba(255,255,255,0.4)';
+                    button.style.fontWeight = 'bold';
+                } else {
+                    button.style.background = 'rgba(255,255,255,0.2)';
+                    button.style.fontWeight = 'normal';
+                }
+            });
         }
 
         function previousDay() {
@@ -802,6 +821,11 @@
 
         function nextDay() {
             currentDayIndex = (currentDayIndex + 1) % 5;
+            updateCurrentDayDisplay();
+        }
+
+        function goToDay(dayIndex) {
+            currentDayIndex = dayIndex;
             updateCurrentDayDisplay();
         }
 
@@ -855,7 +879,6 @@
 
         function generateDailyMessageText(formattedDate, dayName) {
             if (!window.doctorShiftData) {
-                // Fallback to old rotation system if no shift data available
                 return generateRotatedDailyMessage(formattedDate, dayName);
             }
 
@@ -864,7 +887,7 @@
             
             let message = `SHO Team allocations for ${formattedDate} ${dayName}\n\n`;
 
-            // Get doctors working this day (excluding those with AL, ZERO, SL, WEISS, NIGHT)
+            // Get doctors working this day (excluding unavailable ones)
             const availableToday = window.doctorShiftData.filter(doctor => {
                 const shift = doctor.shifts[dayKey] || '';
                 const upperShift = shift.toUpperCase();
@@ -884,7 +907,7 @@
 
             const ldBleeps = window.doctorShiftData.filter(doctor => {
                 const shift = doctor.shifts[dayKey] || '';
-                return shift.toUpperCase().includes('LD BLEEP') || shift.toUpperCase().includes('LD BLEEPS');
+                return shift.toUpperCase().includes('LD BLEEP');
             });
 
             const ldSeconds = window.doctorShiftData.filter(doctor => {
@@ -897,51 +920,76 @@
                 return shift.toUpperCase().includes('NIGHT');
             });
 
-            // Organize by consultant teams based on firm codes
+            // Always assign Suraj to PC/MM if available
+            const surajDoctor = availableToday.find(d => d.name.toLowerCase().includes('suraj'));
+            
+            // Organize by consultant teams with priority for consistency
             const teamAllocations = {
-                'Pituitary + Epilepsy': availableToday.filter(d => 
-                    ['ND', 'HM', 'RB', 'AB', 'AWM', 'ANM'].some(code => 
-                        d.firm.includes(code)
-                    )
-                ),
-                'Functional': availableToday.filter(d => 
-                    ['LZ', 'JH', 'HA', 'MK'].some(code => 
-                        d.firm.includes(code)
-                    )
-                ),
-                'Hydrocephalus': availableToday.filter(d => 
-                    ['AT', 'LW'].some(code => 
-                        d.firm.includes(code)
-                    )
-                ),
-                'PG/WM': availableToday.filter(d => 
-                    ['PG', 'WM'].some(code => 
-                        d.firm.includes(code)
-                    )
-                ),
-                'PC/MM': availableToday.filter(d => 
-                    ['PC', 'MM'].some(code => 
-                        d.firm.includes(code)
-                    )
-                ),
-                'Team C': availableToday.filter(d => 
-                    ['HS', 'NK', 'RO', 'RM', 'CH', 'LT'].some(code => 
-                        d.firm.includes(code)
-                    )
-                ),
-                'Team D': availableToday.filter(d => 
-                    ['PS', 'JA', 'NZ', 'DC', 'VR', 'AR', 'ATC', 'GP'].some(code => 
-                        d.firm.includes(code)
-                    )
-                )
+                'Pituitary + Epilepsy': [],
+                'Functional': [],
+                'Hydrocephalus': [],
+                'PG/WM': [],
+                'PC/MM': surajDoctor ? [surajDoctor] : [], // Suraj always on PC/MM if available
+                'Team C': [],
+                'Team D': []
             };
+
+            // Remove Suraj from available pool if assigned to PC/MM
+            const remainingDoctors = surajDoctor ? 
+                availableToday.filter(d => !d.name.toLowerCase().includes('suraj')) : 
+                availableToday;
+
+            // Assign doctors to their primary teams based on firm codes
+            remainingDoctors.forEach(doctor => {
+                const firm = doctor.firm.toUpperCase();
+                
+                if (['ND', 'HM', 'RB', 'AB', 'AWM', 'ANM'].some(code => firm.includes(code))) {
+                    teamAllocations['Pituitary + Epilepsy'].push(doctor);
+                } else if (['LZ', 'JH', 'HA', 'MK'].some(code => firm.includes(code))) {
+                    teamAllocations['Functional'].push(doctor);
+                } else if (['AT', 'LW'].some(code => firm.includes(code))) {
+                    teamAllocations['Hydrocephalus'].push(doctor);
+                } else if (['PG', 'WM'].some(code => firm.includes(code))) {
+                    teamAllocations['PG/WM'].push(doctor);
+                } else if (['PC', 'MM'].some(code => firm.includes(code)) && !surajDoctor) {
+                    teamAllocations['PC/MM'].push(doctor);
+                } else if (['HS', 'NK', 'RO', 'RM', 'CH', 'LT'].some(code => firm.includes(code))) {
+                    teamAllocations['Team C'].push(doctor);
+                } else if (['PS', 'JA', 'NZ', 'DC', 'VR', 'AR', 'ATC', 'GP'].some(code => firm.includes(code))) {
+                    teamAllocations['Team D'].push(doctor);
+                } else {
+                    // Unassigned doctors - distribute to teams that need help
+                    teamAllocations['Team C'].push(doctor); // Default to Team C for overflow
+                }
+            });
+
+            // Distribute overflow doctors (more than 7 total) to help other teams
+            const totalAssigned = Object.values(teamAllocations).reduce((sum, team) => sum + team.length, 0);
+            if (totalAssigned > 7) {
+                // Find teams that could use extra help
+                const teamsNeedingHelp = ['Functional', 'Team C', 'Team D'];
+                const overflowDoctors = [];
+                
+                // Collect overflow from larger teams
+                Object.entries(teamAllocations).forEach(([teamName, doctors]) => {
+                    if (doctors.length > 2 && !teamsNeedingHelp.includes(teamName)) {
+                        overflowDoctors.push(...doctors.splice(2)); // Keep max 2 per specialty team
+                    }
+                });
+                
+                // Redistribute overflow to teams needing help
+                overflowDoctors.forEach((doctor, index) => {
+                    const targetTeam = teamsNeedingHelp[index % teamsNeedingHelp.length];
+                    teamAllocations[targetTeam].push(doctor);
+                });
+            }
 
             let counter = 1;
 
             // Generate team assignments
             Object.entries(teamAllocations).forEach(([teamName, doctors]) => {
                 if (doctors.length > 0) {
-                    if (teamName === 'Functional' && doctors.length > 1) {
+                    if (teamName === 'Functional' && doctors.length > 0) {
                         message += `${counter}. Functional:\n`;
                         doctors.forEach((doctor, index) => {
                             const firstName = doctor.name.split(' ')[0];
