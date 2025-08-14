@@ -1022,7 +1022,7 @@
                     teamAllocations['PC/MM'].push(doctor);
                 } else if (['HS', 'NK', 'RO', 'RM', 'CH', 'LT'].some(code => firm.includes(code))) {
                     teamAllocations['Team C'].push(doctor);
-                } else if (['PS', 'JA', 'NZ', 'DC', 'VR', 'AR', 'ATC', 'GP'].some(code => firm.includes(code))) {
+                } else if (['PS', 'JA', 'NZ', 'DC', 'VR', 'AR', 'ATC', 'GP', 'IH'].some(code => firm.includes(code))) {
                     teamAllocations['Team D'].push(doctor);
                     console.log(`Assigned ${doctor.name} to Team D (firm: ${doctor.firm})`);
                 } else {
@@ -1077,10 +1077,9 @@
                 if (doctors.length > 0) {
                     if (teamName === 'Functional') {
                         message += `${counter}. Functional:\n`;
-                        doctors.forEach((doctor, index) => {
+                        doctors.slice(0, 1).forEach((doctor, index) => { // Only take first doctor
                             const firstName = doctor.name.split(' ')[0];
-                            const consultants = index === 0 ? '(JH & HA)' : '(LZ & MK)';
-                            message += `      ${firstName}${consultants}\n`;
+                            message += `      ${firstName}(JH & HA)\n`; // Default to JH & HA
                         });
                     } else if (teamName === 'Team C') {
                         message += `${counter}. Team C:\n`;
