@@ -825,38 +825,73 @@
             const teamGrid = document.getElementById('teamGrid');
             if (!teamGrid) return;
 
-            // Find and update existing team cards (not the navigation cards)
-            const teamCards = Array.from(teamGrid.children).filter(card => 
+            // Remove existing team cards (but keep navigation cards)
+            const existingTeamCards = Array.from(teamGrid.children).filter(card => 
                 card.innerHTML.includes('Consultants:') && 
                 !card.innerHTML.includes('Daily Rota Navigator') &&
                 !card.innerHTML.includes('Custom Date Message')
             );
+            existingTeamCards.forEach(card => card.remove());
 
-            teamCards.forEach(card => {
-                const teamName = card.querySelector('h3').textContent.split(' ')[0] + 
-                               (card.querySelector('h3').textContent.includes('+') ? ' + ' + 
-                                card.querySelector('h3').textContent.split(' + ')[1].split(' ')[0] : '');
+            // Remove existing special duty cards
+            const existingDutyCards = Array.from(teamGrid.children).filter(card => 
+                card.innerHTML.includes('🔔')
+            );
+            existingDutyCards.forEach(card => card.remove());
+
+            // Rebuild team cards with current day data
+            Object.entries(window.currentDayTeamAllocation).forEach(([teamName, doctors]) => {
+                const requirement = TEAM_REQUIREMENTS[teamName] || 1;
+                const consultantInfo = CONSULTANT_TEAMS[teamName];
                 
-                const fullTeamName = teamName === 'Pituitary' ? 'Pituitary + Epilepsy' : teamName;
+                const teamCard = document.createElement('div');
+                teamCard.className = 'team-card';
+                teamCard.innerHTML = `
+                    <h3>${teamName} ✅</h3>
+                    <p><strong>Consultants:</strong> ${consultantInfo ? consultantInfo.consultants.join(', ') : ''}</p>
+                    <p><strong>Required:</strong> ${requirement} | <strong>Assigned:</strong> ${doctors.length}</p>
+                    <ul class="doctor-list">
+                        ${doctors.map(doctor => `
+                            <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${typeof doctor === 'string' ? doctor : doctor.name}</li>
+                        `).join('')}
+                    </ul>
+                `;
                 
-                if (window.currentDayTeamAllocation[fullTeamName]) {
-                    const doctors = window.currentDayTeamAllocation[fullTeamName];
-                    const requirement = TEAM_REQUIREMENTS[fullTeamName] || 1;
-                    const consultantInfo = CONSULTANT_TEAMS[fullTeamName];
+                // Insert before the navigation cards
+                const navCard = teamGrid.querySelector('[onclick*="goToDay"]')?.parentElement;
+                if (navCard) {
+                    teamGrid.insertBefore(teamCard, navCard);
+                } else {
+                    teamGrid.appendChild(teamCard);
+                }
+            });
+
+            // Also rebuild special duty cards if they exist
+            if (window.currentDaySpecialDuties) {
+                Object.entries(window.currentDaySpecialDuties).forEach(([duty, doctors]) => {
+                    const requirement = SPECIAL_DUTIES[duty];
                     
-                    // Update the card content - no individual team warnings
-                    card.innerHTML = `
-                        <h3>${fullTeamName} ✅</h3>
-                        <p><strong>Consultants:</strong> ${consultantInfo ? consultantInfo.consultants.join(', ') : ''}</p>
+                    const dutyCard = document.createElement('div');
+                    dutyCard.className = 'team-card';
+                    dutyCard.style.background = 'linear-gradient(135deg, #ffeaa7, #fab1a0)';
+                    dutyCard.innerHTML = `
+                        <h3>🔔 ${duty} ✅</h3>
                         <p><strong>Required:</strong> ${requirement} | <strong>Assigned:</strong> ${doctors.length}</p>
                         <ul class="doctor-list">
                             ${doctors.map(doctor => `
-                                <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${doctor.name}</li>
+                                <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${typeof doctor === 'string' ? doctor : doctor.name}</li>
                             `).join('')}
                         </ul>
                     `;
-                }
-            });
+                    
+                    const navCard = teamGrid.querySelector('[onclick*="goToDay"]')?.parentElement;
+                    if (navCard) {
+                        teamGrid.insertBefore(dutyCard, navCard);
+                    } else {
+                        teamGrid.appendChild(dutyCard);
+                    }
+                });
+            }
         }
 
         function previousDay() {
@@ -932,7 +967,6 @@
             
             let message = `SHO Team allocations for ${formattedDate} ${dayName}\n\n`;
 
-            // Get doctors working this day (including clerking shifts)
             const availableToday = window.doctorShiftData.filter(doctor => {
                 const shift = doctor.shifts[dayKey] || '';
                 const upperShift = shift.toUpperCase();
@@ -946,8 +980,8 @@
                        !upperShift.startsWith('NIGHT') && // Only exclude if it STARTS with NIGHT
                        shift.trim() !== ''; // Exclude empty shifts
                 
-                if (doctor.name.toLowerCase().includes('michael')) {
-                    console.log(`Michael on ${dayName}: shift="${shift}", available=${isAvailable}`);
+                if (doctor.name.toLowerCase().includes('feras')) {
+                    console.log(`Feras on ${dayName}: shift="${shift}", available=${isAvailable}`);
                 }
                 
                 return isAvailable;
@@ -981,6 +1015,10 @@
                 return (firm.includes('PC') || firm.includes('MM')) && !d.name.toLowerCase().includes('fy1');
             });
             
+            // Always assign Feras to Team D if available
+            const ferasDoctor = availableToday.find(d => d.name.toLowerCase().includes('feras'));
+            console.log(`Looking for Feras on ${dayName}:`, ferasDoctor);
+            
             // Identify FY1 doctors who should ONLY be on Team C
             const fy1Doctors = availableToday.filter(d => d.name.toLowerCase().includes('fy1'));
             
@@ -992,14 +1030,15 @@
                 'PG/WM': [],
                 'PC/MM': surajDoctor ? [surajDoctor] : (pcDoctors.length > 0 ? [pcDoctors[0]] : []),
                 'Team C': [...fy1Doctors], // FY1s always go to Team C first
-                'Team D': []
+                'Team D': ferasDoctor ? [ferasDoctor] : [] // Feras always on Team D if available
             };
 
             // Remove assigned doctors from available pool
             const assignedToPCMM = surajDoctor || (pcDoctors.length > 0 ? pcDoctors[0] : null);
             const alreadyAssigned = [
                 ...(assignedToPCMM ? [assignedToPCMM.name] : []),
-                ...fy1Doctors.map(d => d.name)
+                ...fy1Doctors.map(d => d.name),
+                ...(ferasDoctor ? [ferasDoctor.name] : [])
             ];
             
             const remainingDoctors = availableToday.filter(d => !alreadyAssigned.includes(d.name));
@@ -1067,6 +1106,14 @@
 
             // Store current day allocation for the team display
             window.currentDayTeamAllocation = teamAllocations;
+            
+            // Also store special duties for display updates
+            window.currentDaySpecialDuties = {
+                'Clerking Shift': clerkingShifts,
+                'On-call bleep': ldBleeps,
+                'Second on-call': ldSeconds,
+                'Night on-call': nightShifts
+            };
 
             let counter = 1;
 
