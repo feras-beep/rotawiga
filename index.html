@@ -267,7 +267,7 @@
             <p>If you don't have an Excel file, you can manually enter the available doctors:</p>
             <div class="input-group">
                 <label for="doctorList">Available Doctors (one per line):</label>
-                <textarea id="doctorList" placeholder="Dr. Smith&#10;Dr. Johnson&#10;Dr. Brown&#10;Suraj&#10;Sanchita&#10;George&#10;Feras&#10;FY1"></textarea>
+                <textarea id="doctorList" placeholder="Munashe Veremu&#10;Hassan Bin Ajmal&#10;Michael Bandrivskyi&#10;George Hudson&#10;Sanchita Bhatia&#10;Suraj Sennik&#10;Danyal Khan FY1"></textarea>
             </div>
             <button class="button" onclick="processManualInput()">Process Manual Input</button>
         </div>
@@ -308,7 +308,7 @@
             'suraj': 'Team B',
             'sanchita': 'Team B',
             'george': 'Team A',
-            'feras': 'Team D'
+            'feras': 'Team D'  // Note: Feras may not always be available
         };
 
         document.getElementById('fileInput').addEventListener('change', handleFileSelect);
@@ -325,8 +325,10 @@
 
         function generateSampleData() {
             const sampleDoctors = [
-                'Dr. Smith', 'Dr. Johnson', 'Dr. Brown', 'Dr. Wilson', 
-                'Suraj', 'Sanchita', 'George', 'Feras', 'Dr. Davis', 'FY1'
+                'Munashe Veremu', 'Hassan Bin Ajmal', 'Michael Bandrivskyi', 'Taha Albohassan', 
+                'George Hudson', 'Sanchita Bhatia', 'Redwan Jabbar', 'Suraj Sennik', 
+                'Hamza Salhab', 'Sandie Eiras', 'Oleksii Goncharuk', 'Shamimur Rahman',
+                'Constantinos Thoma', 'Danyal Khan FY1', 'Sabrina Smith', 'Ioannis Koukoulithras'
             ];
             currentDoctors = sampleDoctors;
             document.getElementById('doctorList').value = sampleDoctors.join('\n');
@@ -360,28 +362,42 @@
                 const arrayBuffer = await file.arrayBuffer();
                 const workbook = XLSX.read(arrayBuffer);
                 
-                // Find the sho rota sheet
-                const shoRotaSheet = workbook.SheetNames.find(name => 
-                    name.toLowerCase().includes('sho') && name.toLowerCase().includes('rota')
-                ) || workbook.SheetNames.find(name => 
-                    name.toLowerCase().includes('sho')
+                // Find the sho rota sheet - look for exact name match first
+                let shoRotaSheet = workbook.SheetNames.find(name => 
+                    name.toLowerCase() === 'sho rota'
                 );
+                
+                // If not found, try other variations
+                if (!shoRotaSheet) {
+                    shoRotaSheet = workbook.SheetNames.find(name => 
+                        name.toLowerCase().includes('sho') && name.toLowerCase().includes('rota')
+                    ) || workbook.SheetNames.find(name => 
+                        name.toLowerCase().includes('sho')
+                    );
+                }
 
                 if (!shoRotaSheet) {
-                    showAlert('Could not find "sho rota" sheet. Available sheets: ' + workbook.SheetNames.join(', '), 'error');
+                    showAlert('Could not find "SHO Rota" sheet. Available sheets: ' + workbook.SheetNames.join(', '), 'error');
                     return;
                 }
 
                 const worksheet = workbook.Sheets[shoRotaSheet];
-                const data = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
                 
                 // Extract doctor names (assuming they're in a column)
                 currentDoctors = extractDoctorNames(data);
                 
+                console.log('Extracted doctors:', currentDoctors);
+                console.log('Sheet found:', shoRotaSheet);
+                
                 if (currentDoctors.length === 0) {
-                    showAlert('No doctor names found in the Excel file. Please check the format.', 'error');
+                    showAlert('No doctor names found in the Excel file. Please check the format or try manual entry.', 'error');
+                    // Show some sample data for debugging
+                    console.log('Sample data from sheet:', data.slice(0, 10));
                     return;
                 }
+
+                showAlert(`✅ Successfully extracted ${currentDoctors.length} doctors from "${shoRotaSheet}" sheet`, 'success');
 
                 processAllocation();
                 
@@ -391,34 +407,38 @@
         }
 
         function extractDoctorNames(data) {
-            const doctors = new Set();
+            const doctors = [];
+            let currentTeam = '';
             
-            // Try to find doctor names in various possible columns
-            const possibleColumns = ['name', 'doctor', 'doctors', 'staff', 'personnel'];
-            
-            data.forEach(row => {
-                Object.keys(row).forEach(key => {
-                    const lowerKey = key.toLowerCase();
-                    if (possibleColumns.some(col => lowerKey.includes(col))) {
-                        const value = row[key];
-                        if (value && typeof value === 'string' && value.trim()) {
-                            doctors.add(value.trim());
+            // Parse the specific Excel format we identified
+            data.forEach((row, index) => {
+                // Check if this row defines a team
+                if (row[0] && row[0].toString().includes('Team ')) {
+                    currentTeam = row[0].toString().trim();
+                    
+                    // If there's a doctor name in the same row (column B - index 1)
+                    if (row[1] && row[1].toString().trim()) {
+                        const doctorName = row[1].toString().trim();
+                        if (!doctorName.includes('ADMISSIONS') && !doctorName.includes('→') && 
+                            !doctorName.includes('Locum Cover')) {
+                            doctors.push(doctorName);
                         }
                     }
-                });
-                
-                // If no specific columns found, try to extract from all string values
-                if (doctors.size === 0) {
-                    Object.values(row).forEach(value => {
-                        if (value && typeof value === 'string' && value.trim() && 
-                            value.length > 2 && value.length < 50) {
-                            doctors.add(value.trim());
+                } 
+                // Check for doctors in subsequent rows (where team column is empty but doctor name exists)
+                else if ((!row[0] || row[0].toString().trim() === '') && currentTeam) {
+                    if (row[1] && row[1].toString().trim()) {
+                        const doctorName = row[1].toString().trim();
+                        if (!doctorName.includes('ADMISSIONS') && !doctorName.includes('→') && 
+                            !doctorName.includes('Locum Cover')) {
+                            doctors.push(doctorName);
                         }
-                    });
+                    }
                 }
             });
-
-            return Array.from(doctors);
+            
+            // Remove duplicates and return
+            return [...new Set(doctors)];
         }
 
         function processAllocation() {
