@@ -246,39 +246,6 @@
             height: 100px;
             resize: vertical;
         }
-        
-        .day-nav-container {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin: 20px 0;
-            padding: 15px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 10px;
-        }
-        
-        .day-nav-button {
-            padding: 10px 20px;
-            background: rgba(255,255,255,0.2);
-            color: white;
-            border: 1px solid rgba(255,255,255,0.3);
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 1rem;
-            transition: all 0.3s ease;
-        }
-        
-        .day-nav-button:hover {
-            background: rgba(255,255,255,0.3);
-            transform: translateY(-2px);
-        }
-        
-        .current-day-info {
-            text-align: center;
-            font-size: 1.2rem;
-            font-weight: bold;
-            color: white;
-        }
     </style>
 </head>
 <body>
@@ -300,7 +267,7 @@
             <p>If you don't have an Excel file, you can manually enter the available doctors:</p>
             <div class="input-group">
                 <label for="doctorList">Available Doctors (one per line):</label>
-                <textarea id="doctorList" placeholder="Munashe Veremu&#10;Hassan Bin Ajmal&#10;Michael Bandrivskyi&#10;George Hudson&#10;Sanchita Bhatia&#10;Suraj Sennik&#10;Danyal Khan FY1"></textarea>
+                <textarea id="doctorList" placeholder="Munashe Veremu&#10;Hassan Bin Ajmal&#10;Michael Bandrivskyi&#10;George Hudson&#10;Sanchita Bhatia&#10;Suraj Sennik&#10;Danyal Khan FY1&#10;Feras Fayez"></textarea>
             </div>
             <button class="button" onclick="processManualInput()">Process Manual Input</button>
         </div>
@@ -331,46 +298,50 @@
         let weekStartDate = new Date('2025-08-18');
         let currentDayIndex = 0;
 
+        // Team requirements - clean version
+        const TEAM_REQUIREMENTS = {
+            'Pituitary + Epilepsy': 1,
+            'Functional': 1,
+            'Hydrocephalus': 1,
+            'PG/WM': 1,
+            'PC/MM': 1,
+            'Team C': 1,
+            'Team D': 1
+        };
+
+        // Consultant teams info
         const CONSULTANT_TEAMS = {
             'Pituitary + Epilepsy': {
                 consultants: ['ND', 'HM', 'RB', 'AB', 'AWM', 'ANM'],
-                requiredDoctors: 1,
-                specialty: 'Pituitary + Epilepsy'
+                requiredDoctors: 1
             },
             'Functional': {
                 consultants: ['JH', 'HA', 'LZ', 'MK'],
-                requiredDoctors: 2,
-                specialty: 'Functional',
-                subTeams: ['JH & HA', 'LZ & MK']
+                requiredDoctors: 1
             },
             'Hydrocephalus': {
                 consultants: ['AT', 'LW'],
-                requiredDoctors: 1,
-                specialty: 'Hydrocephalus'
+                requiredDoctors: 1
             },
             'PG/WM': {
                 consultants: ['PG', 'WM'],
-                requiredDoctors: 1,
-                specialty: 'PG/WM'
+                requiredDoctors: 1
             },
             'PC/MM': {
                 consultants: ['PC', 'MM'],
-                requiredDoctors: 1,
-                specialty: 'PC/MM'
+                requiredDoctors: 1
             },
             'Team C': {
                 consultants: ['CH', 'LT', 'NK', 'RM'],
-                requiredDoctors: 3,
-                specialty: 'Team C',
-                includesFY1: true
+                requiredDoctors: 1
             },
             'Team D': {
-                consultants: ['Team D'],
-                requiredDoctors: 2,
-                specialty: 'Team D'
+                consultants: ['PS', 'JA', 'NZ', 'DC', 'VR', 'AR', 'ATC', 'GP', 'IH'],
+                requiredDoctors: 1
             }
         };
 
+        // Special duties
         const SPECIAL_DUTIES = {
             'Clerking Shift': 2,
             'On-call bleep': 1,
@@ -378,16 +349,7 @@
             'Night on-call': 1
         };
 
-        const TEAM_REQUIREMENTS = {
-            'Pituitary + Epilepsy': 1,
-            'Functional': 2,
-            'Hydrocephalus': 1,
-            'PG/WM': 1,
-            'PC/MM': 1,
-            'Team C': 3,
-            'Team D': 2
-        };
-
+        // Preferred assignments
         const PREFERRED_ASSIGNMENTS = {
             'suraj': 'PC/MM',
             'sanchita': 'Night on-call',
@@ -398,8 +360,8 @@
             'constantinos': 'Team C',
             'mohammed': 'Team D',
             'redwan': 'Team D',
-            'feras': 'Team D', // Now properly detected
-            'danyal': 'Team C' // FY1 always on Team C
+            'feras': 'Team D',
+            'danyal': 'Team C'
         };
 
         document.getElementById('fileInput').addEventListener('change', handleFileSelect);
@@ -420,7 +382,7 @@
                 'George Hudson', 'Sanchita Bhatia', 'Redwan Jabbar', 'Suraj Sennik', 
                 'Hamza Salhab', 'Sandie Eiras', 'Oleksii Goncharuk', 'Shamimur Rahman',
                 'Constantinos Thoma', 'Danyal Khan FY1', 'Sabrina Smith', 'Ioannis Koukoulithras',
-                'Mohammed Lester', 'Saikat Ahmed'
+                'Mohammed Lester', 'Feras Fayez'
             ];
             currentDoctors = sampleDoctors;
             document.getElementById('doctorList').value = sampleDoctors.join('\n');
@@ -451,8 +413,12 @@
             }
 
             try {
+                console.log('Processing file:', file.name);
+                
                 const arrayBuffer = await file.arrayBuffer();
                 const workbook = XLSX.read(arrayBuffer);
+                
+                console.log('Available sheets:', workbook.SheetNames);
                 
                 let shoRotaSheet = workbook.SheetNames.find(name => 
                     name.toLowerCase() === 'sho rota'
@@ -460,8 +426,6 @@
                 
                 if (!shoRotaSheet) {
                     shoRotaSheet = workbook.SheetNames.find(name => 
-                        name.toLowerCase().includes('sho') && name.toLowerCase().includes('rota')
-                    ) || workbook.SheetNames.find(name => 
                         name.toLowerCase().includes('sho')
                     );
                 }
@@ -471,24 +435,30 @@
                     return;
                 }
 
+                console.log('Using sheet:', shoRotaSheet);
+                
                 const worksheet = workbook.Sheets[shoRotaSheet];
                 const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+                
+                console.log('Data rows:', data.length);
                 
                 currentDoctors = extractDoctorNames(data);
                 
                 console.log('Extracted doctors:', currentDoctors);
-                console.log('Sheet found:', shoRotaSheet);
+                console.log('Doctor count:', currentDoctors.length);
                 
                 if (currentDoctors.length === 0) {
                     showAlert('No doctor names found in the Excel file. Please check the format or try manual entry.', 'error');
-                    console.log('Sample data from sheet:', data.slice(0, 10));
                     return;
                 }
 
                 showAlert(`✅ Successfully extracted ${currentDoctors.length} doctors from "${shoRotaSheet}" sheet`, 'success');
+                
+                console.log('About to call processAllocation...');
                 processAllocation();
                 
             } catch (error) {
+                console.error('Error in processRota:', error);
                 showAlert('Error processing file: ' + error.message, 'error');
             }
         }
@@ -497,7 +467,7 @@
             const doctors = [];
             let currentTeam = '';
             
-            // Extract week starting date from the Excel file
+            // Extract week starting date
             const weekCommencingRow = data.find(row => 
                 row[0] && row[0].toString().toLowerCase().includes('w/c')
             );
@@ -510,25 +480,24 @@
                         const parsedDate = new Date(dateStr);
                         if (!isNaN(parsedDate.getTime())) {
                             weekStartDate = parsedDate;
-                            console.log('Extracted week start date:', weekStartDate.toDateString());
                         }
                     } catch (e) {
-                        console.log('Could not parse date, using default');
+                        // Use default date
                     }
                 }
             }
             
-            // Parse the specific Excel format and extract actual shift data
+            // Extract doctors from Excel data
             data.forEach((row, index) => {
-                // Check if this row defines a team
-                if (row[0] && row[0].toString().includes('Team ')) {
+                // Check for team headers (including "TEAM D")
+                if (row[0] && (row[0].toString().includes('Team ') || row[0].toString().includes('TEAM'))) {
                     currentTeam = row[0].toString().trim();
                     
-                    // If there's a doctor name in the same row (column B - index 1)
+                    // Doctor in same row as team header
                     if (row[1] && row[1].toString().trim()) {
                         const doctorName = row[1].toString().trim();
                         if (!doctorName.includes('ADMISSIONS') && !doctorName.includes('→') && 
-                            !doctorName.includes('Locum Cover')) {
+                            !doctorName.includes('Locum Cover') && doctorName !== 'PP') {
                             doctors.push({
                                 name: doctorName,
                                 team: currentTeam,
@@ -544,12 +513,12 @@
                         }
                     }
                 } 
-                // Check for doctors in subsequent rows
+                // Doctors in subsequent rows
                 else if ((!row[0] || row[0].toString().trim() === '') && currentTeam) {
                     if (row[1] && row[1].toString().trim()) {
                         const doctorName = row[1].toString().trim();
                         if (!doctorName.includes('ADMISSIONS') && !doctorName.includes('→') && 
-                            !doctorName.includes('Locum Cover')) {
+                            !doctorName.includes('Locum Cover') && doctorName !== 'PP') {
                             doctors.push({
                                 name: doctorName,
                                 team: currentTeam,
@@ -567,36 +536,49 @@
                 }
             });
             
-            // Return just doctor names for compatibility, but store full data
-            window.doctorShiftData = doctors; // Store for later use
+            // Store for later use
+            window.doctorShiftData = doctors;
             return [...new Set(doctors.map(d => d.name))];
         }
 
         function processAllocation() {
+            console.log('processAllocation called with doctors:', currentDoctors);
+            
             if (currentDoctors.length === 0) {
                 showAlert('No doctors available for allocation', 'error');
                 return;
             }
 
+            // Filter out FY1 doctors from main count
             const availableDoctors = currentDoctors.filter(doctor => 
                 !doctor.toLowerCase().includes('fy1')
             );
 
-            const totalRequired = Object.values(TEAM_REQUIREMENTS).reduce((sum, req) => sum + req, 0);
+            console.log('Available doctors (non-FY1):', availableDoctors);
+
+            // Check if we have enough doctors (need 7 total excluding FY1)
+            const totalRequired = 7;
             const needsLocum = availableDoctors.length < totalRequired;
 
-            const result = allocateDoctorsToTeams(availableDoctors);
-            const allocation = result.allocation;
-            const specialDuties = result.specialDuties;
-            currentAllocation = { allocation, specialDuties };
+            console.log('Need locum?', needsLocum, 'Available:', availableDoctors.length, 'Required:', totalRequired);
 
-            displayResults(allocation, specialDuties, needsLocum, availableDoctors.length, totalRequired);
+            // Allocate doctors to teams
+            console.log('Calling allocateDoctorsToTeams...');
+            const result = allocateDoctorsToTeams(availableDoctors);
+            console.log('Allocation result:', result);
+            
+            currentAllocation = result;
+
+            // Display results
+            console.log('Calling displayResults...');
+            displayResults(result.allocation, result.specialDuties, needsLocum, availableDoctors.length, totalRequired);
         }
 
         function allocateDoctorsToTeams(doctors) {
             const allocation = {};
             const specialDuties = {};
             
+            // Initialize teams
             Object.keys(CONSULTANT_TEAMS).forEach(team => {
                 allocation[team] = [];
             });
@@ -608,6 +590,16 @@
             const availableDoctors = [...doctors];
             const assigned = new Set();
 
+            // Add FY1 doctors to Team C
+            const fy1Doctors = currentDoctors.filter(d => d.name ? d.name.toLowerCase().includes('fy1') : d.toLowerCase().includes('fy1'));
+            fy1Doctors.forEach(doctor => {
+                allocation['Team C'].push({
+                    name: typeof doctor === 'string' ? doctor : doctor.name,
+                    preferred: false
+                });
+            });
+
+            // Assign preferred doctors
             Object.entries(PREFERRED_ASSIGNMENTS).forEach(([doctorKey, preferredRole]) => {
                 const doctor = availableDoctors.find(d => 
                     d.toLowerCase().includes(doctorKey.toLowerCase())
@@ -631,6 +623,7 @@
                 }
             });
 
+            // Fill remaining spots
             const unassignedDoctors = availableDoctors.filter(d => !assigned.has(d));
             
             Object.entries(TEAM_REQUIREMENTS).forEach(([team, requirement]) => {
@@ -659,10 +652,17 @@
         }
 
         function displayResults(allocation, specialDuties, needsLocum, availableCount, requiredCount) {
+            console.log('displayResults called with:', { allocation, specialDuties, needsLocum, availableCount, requiredCount });
+            
             const resultsDiv = document.getElementById('results');
             const alertsDiv = document.getElementById('alerts');
             const statsGrid = document.getElementById('statsGrid');
             const teamGrid = document.getElementById('teamGrid');
+
+            if (!resultsDiv || !alertsDiv || !statsGrid || !teamGrid) {
+                console.error('Required DOM elements not found');
+                return;
+            }
 
             alertsDiv.innerHTML = '';
             statsGrid.innerHTML = '';
@@ -675,17 +675,15 @@
                 showAlert('✅ All teams can be adequately staffed with current doctors', 'success');
             }
 
-            const totalAssignments = Object.values(TEAM_REQUIREMENTS).reduce((sum, req) => sum + req, 0) + 
-                                   Object.values(SPECIAL_DUTIES).reduce((sum, req) => sum + req, 0);
-            
+            console.log('Adding stats...');
             statsGrid.innerHTML = `
                 <div class="stat-card">
                     <h4>Available Doctors</h4>
                     <div class="number">${availableCount}</div>
                 </div>
                 <div class="stat-card">
-                    <h4>Total Assignments</h4>
-                    <div class="number">${totalAssignments}</div>
+                    <h4>Required Doctors</h4>
+                    <div class="number">${requiredCount}</div>
                 </div>
                 <div class="stat-card">
                     <h4>Consultant Teams</h4>
@@ -697,47 +695,51 @@
                 </div>
             `;
 
+            console.log('Adding team cards...');
+            // Show team allocations
             Object.entries(allocation).forEach(([team, doctors]) => {
                 const requirement = TEAM_REQUIREMENTS[team];
-                const isUnderStaffed = doctors.length < requirement;
                 const consultantInfo = CONSULTANT_TEAMS[team];
+                
+                console.log(`Creating card for ${team} with ${doctors.length} doctors`);
                 
                 const teamCard = document.createElement('div');
                 teamCard.className = 'team-card';
                 teamCard.innerHTML = `
-                    <h3>${team} ${isUnderStaffed ? '⚠️' : '✅'}</h3>
+                    <h3>${team} ✅</h3>
                     <p><strong>Consultants:</strong> ${consultantInfo.consultants.join(', ')}</p>
                     <p><strong>Required:</strong> ${requirement} | <strong>Assigned:</strong> ${doctors.length}</p>
                     <ul class="doctor-list">
                         ${doctors.map(doctor => `
                             <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${doctor.name}</li>
                         `).join('')}
-                        ${isUnderStaffed ? '<li style="color: #e74c3c; font-style: italic;">⚠️ Needs locum coverage</li>' : ''}
                     </ul>
                 `;
                 teamGrid.appendChild(teamCard);
             });
 
+            console.log('Adding special duty cards...');
+            // Show special duties
             Object.entries(specialDuties).forEach(([duty, doctors]) => {
                 const requirement = SPECIAL_DUTIES[duty];
-                const isUnderStaffed = doctors.length < requirement;
                 
                 const dutyCard = document.createElement('div');
                 dutyCard.className = 'team-card';
                 dutyCard.style.background = 'linear-gradient(135deg, #ffeaa7, #fab1a0)';
                 dutyCard.innerHTML = `
-                    <h3>🔔 ${duty} ${isUnderStaffed ? '⚠️' : '✅'}</h3>
+                    <h3>🔔 ${duty} ✅</h3>
                     <p><strong>Required:</strong> ${requirement} | <strong>Assigned:</strong> ${doctors.length}</p>
                     <ul class="doctor-list">
                         ${doctors.map(doctor => `
                             <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${doctor.name}</li>
                         `).join('')}
-                        ${isUnderStaffed ? '<li style="color: #e74c3c; font-style: italic;">⚠️ Needs coverage</li>' : ''}
                     </ul>
                 `;
                 teamGrid.appendChild(dutyCard);
             });
 
+            console.log('Adding day navigator...');
+            // Add day navigator
             const dayNavCard = document.createElement('div');
             dayNavCard.className = 'team-card';
             dayNavCard.style.background = 'linear-gradient(135deg, #6c5ce7, #a29bfe)';
@@ -745,39 +747,29 @@
             dayNavCard.innerHTML = `
                 <h3>📅 Weekday Rota Navigator (Mon-Fri)</h3>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin: 20px 0;">
-                    <button class="button" onclick="previousDay()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">◀ Previous</button>
+                    <button class="button" onclick="previousDay()" style="background: rgba(255,255,255,0.2); color: white;">◀ Previous</button>
                     <div id="currentDayDisplay" style="text-align: center; font-size: 1.2rem; font-weight: bold;"></div>
-                    <button class="button" onclick="nextDay()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">Next ▶</button>
+                    <button class="button" onclick="nextDay()" style="background: rgba(255,255,255,0.2); color: white;">Next ▶</button>
                 </div>
                 <div style="display: flex; justify-content: center; gap: 10px; margin: 15px 0; flex-wrap: wrap;">
-                    <button class="button" onclick="goToDay(0)" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); font-size: 0.9rem;">Mon</button>
-                    <button class="button" onclick="goToDay(1)" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); font-size: 0.9rem;">Tue</button>
-                    <button class="button" onclick="goToDay(2)" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); font-size: 0.9rem;">Wed</button>
-                    <button class="button" onclick="goToDay(3)" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); font-size: 0.9rem;">Thu</button>
-                    <button class="button" onclick="goToDay(4)" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); font-size: 0.9rem;">Fri</button>
+                    <button class="button" onclick="goToDay(0)" style="background: rgba(255,255,255,0.2); color: white; font-size: 0.9rem;">Mon</button>
+                    <button class="button" onclick="goToDay(1)" style="background: rgba(255,255,255,0.2); color: white; font-size: 0.9rem;">Tue</button>
+                    <button class="button" onclick="goToDay(2)" style="background: rgba(255,255,255,0.2); color: white; font-size: 0.9rem;">Wed</button>
+                    <button class="button" onclick="goToDay(3)" style="background: rgba(255,255,255,0.2); color: white; font-size: 0.9rem;">Thu</button>
+                    <button class="button" onclick="goToDay(4)" style="background: rgba(255,255,255,0.2); color: white; font-size: 0.9rem;">Fri</button>
                 </div>
                 <div id="currentDayAllocation" style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; font-family: monospace; white-space: pre-line; font-size: 0.9rem;"></div>
                 <button class="button" onclick="copyCurrentDay()" style="background: white; color: #6c5ce7; margin-top: 10px;">📋 Copy Today's Message</button>
             `;
             teamGrid.appendChild(dayNavCard);
 
-            const messageCard = document.createElement('div');
-            messageCard.className = 'team-card';
-            messageCard.style.background = 'linear-gradient(135deg, #74b9ff, #0984e3)';
-            messageCard.style.color = 'white';
-            messageCard.innerHTML = `
-                <h3>📅 Custom Date Message</h3>
-                <div class="input-group" style="margin: 15px 0;">
-                    <label for="dateInput" style="color: white;">Select Custom Date:</label>
-                    <input type="date" id="dateInput" value="${new Date().toISOString().split('T')[0]}" style="color: black;">
-                </div>
-                <button class="button" onclick="generateDailyMessage()" style="background: white; color: #0984e3;">📝 Generate Custom Message</button>
-                <div id="dailyMessage" style="margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 8px; font-family: monospace; white-space: pre-line; display: none;"></div>
-            `;
-            teamGrid.appendChild(messageCard);
-
+            console.log('Calling updateCurrentDayDisplay...');
             updateCurrentDayDisplay();
+            
+            console.log('Showing results div...');
             resultsDiv.classList.remove('hidden');
+            
+            console.log('displayResults completed');
         }
 
         function updateCurrentDayDisplay() {
@@ -801,9 +793,6 @@
             if (allocationDiv && currentAllocation) {
                 const message = generateDailyMessageText(formattedDate, dayName);
                 allocationDiv.textContent = message;
-                
-                // Update the team cards display to match current day
-                updateTeamCardsForCurrentDay();
             }
 
             // Update day button highlighting
@@ -817,81 +806,6 @@
                     button.style.fontWeight = 'normal';
                 }
             });
-        }
-
-        function updateTeamCardsForCurrentDay() {
-            if (!window.currentDayTeamAllocation) return;
-
-            const teamGrid = document.getElementById('teamGrid');
-            if (!teamGrid) return;
-
-            // Remove existing team cards (but keep navigation cards)
-            const existingTeamCards = Array.from(teamGrid.children).filter(card => 
-                card.innerHTML.includes('Consultants:') && 
-                !card.innerHTML.includes('Daily Rota Navigator') &&
-                !card.innerHTML.includes('Custom Date Message')
-            );
-            existingTeamCards.forEach(card => card.remove());
-
-            // Remove existing special duty cards
-            const existingDutyCards = Array.from(teamGrid.children).filter(card => 
-                card.innerHTML.includes('🔔')
-            );
-            existingDutyCards.forEach(card => card.remove());
-
-            // Rebuild team cards with current day data
-            Object.entries(window.currentDayTeamAllocation).forEach(([teamName, doctors]) => {
-                const requirement = TEAM_REQUIREMENTS[teamName] || 1;
-                const consultantInfo = CONSULTANT_TEAMS[teamName];
-                
-                const teamCard = document.createElement('div');
-                teamCard.className = 'team-card';
-                teamCard.innerHTML = `
-                    <h3>${teamName} ✅</h3>
-                    <p><strong>Consultants:</strong> ${consultantInfo ? consultantInfo.consultants.join(', ') : ''}</p>
-                    <p><strong>Required:</strong> ${requirement} | <strong>Assigned:</strong> ${doctors.length}</p>
-                    <ul class="doctor-list">
-                        ${doctors.map(doctor => `
-                            <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${typeof doctor === 'string' ? doctor : doctor.name}</li>
-                        `).join('')}
-                    </ul>
-                `;
-                
-                // Insert before the navigation cards
-                const navCard = teamGrid.querySelector('[onclick*="goToDay"]')?.parentElement;
-                if (navCard) {
-                    teamGrid.insertBefore(teamCard, navCard);
-                } else {
-                    teamGrid.appendChild(teamCard);
-                }
-            });
-
-            // Also rebuild special duty cards if they exist
-            if (window.currentDaySpecialDuties) {
-                Object.entries(window.currentDaySpecialDuties).forEach(([duty, doctors]) => {
-                    const requirement = SPECIAL_DUTIES[duty];
-                    
-                    const dutyCard = document.createElement('div');
-                    dutyCard.className = 'team-card';
-                    dutyCard.style.background = 'linear-gradient(135deg, #ffeaa7, #fab1a0)';
-                    dutyCard.innerHTML = `
-                        <h3>🔔 ${duty} ✅</h3>
-                        <p><strong>Required:</strong> ${requirement} | <strong>Assigned:</strong> ${doctors.length}</p>
-                        <ul class="doctor-list">
-                            ${doctors.map(doctor => `
-                                <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${typeof doctor === 'string' ? doctor : doctor.name}</li>
-                            `).join('')}
-                        </ul>
-                    `;
-                    
-                    const navCard = teamGrid.querySelector('[onclick*="goToDay"]')?.parentElement;
-                    if (navCard) {
-                        teamGrid.insertBefore(dutyCard, navCard);
-                    } else {
-                        teamGrid.appendChild(dutyCard);
-                    }
-                });
-            }
         }
 
         function previousDay() {
@@ -920,46 +834,10 @@
             }
         }
 
-        function showAlert(message, type) {
-            const alertsDiv = document.getElementById('alerts');
-            const alert = document.createElement('div');
-            alert.className = `alert alert-${type}`;
-            alert.innerHTML = message;
-            alertsDiv.appendChild(alert);
-        }
-
-        function generateDailyMessage() {
-            if (!currentAllocation) {
-                showAlert('No allocation data available. Please process a rota first.', 'error');
-                return;
-            }
-
-            const dateInput = document.getElementById('dateInput');
-            const selectedDate = new Date(dateInput.value);
-            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            const dayName = dayNames[selectedDate.getDay()];
-            const formattedDate = selectedDate.toLocaleDateString('en-GB', { 
-                day: '2-digit', 
-                month: '2-digit', 
-                year: '2-digit' 
-            });
-
-            const message = generateDailyMessageText(formattedDate, dayName);
-
-            const messageDiv = document.getElementById('dailyMessage');
-            messageDiv.textContent = message;
-            messageDiv.style.display = 'block';
-
-            messageDiv.onclick = function() {
-                navigator.clipboard.writeText(message).then(() => {
-                    showAlert('✅ Daily message copied to clipboard!', 'success');
-                });
-            };
-        }
-
         function generateDailyMessageText(formattedDate, dayName) {
             if (!window.doctorShiftData) {
-                return generateRotatedDailyMessage(formattedDate, dayName);
+                // Fallback to basic allocation if no shift data
+                return generateBasicMessage(formattedDate, dayName);
             }
 
             const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -967,24 +845,17 @@
             
             let message = `SHO Team allocations for ${formattedDate} ${dayName}\n\n`;
 
+            // Get doctors working this day based on actual Excel shifts
             const availableToday = window.doctorShiftData.filter(doctor => {
                 const shift = doctor.shifts[dayKey] || '';
                 const upperShift = shift.toUpperCase();
-                
-                // Consider available if they have any shift that's not AL, ZERO, SL, WEISS, or just NIGHT
-                const isAvailable = shift && 
+                return shift && 
                        !upperShift.includes('AL') && 
                        !upperShift.includes('ZERO') && 
                        !upperShift.includes('SL') && 
                        !upperShift.includes('WEISS') &&
-                       !upperShift.startsWith('NIGHT') && // Only exclude if it STARTS with NIGHT
-                       shift.trim() !== ''; // Exclude empty shifts
-                
-                if (doctor.name.toLowerCase().includes('feras')) {
-                    console.log(`Feras on ${dayName}: shift="${shift}", available=${isAvailable}`);
-                }
-                
-                return isAvailable;
+                       !upperShift.startsWith('NIGHT') &&
+                       shift.trim() !== '';
             });
 
             // Get special duty assignments for this day
@@ -1008,112 +879,8 @@
                 return shift.toUpperCase().includes('NIGHT');
             });
 
-            // Always assign Suraj to PC/MM if available, otherwise assign PC doctors
-            const surajDoctor = availableToday.find(d => d.name.toLowerCase().includes('suraj'));
-            const pcDoctors = availableToday.filter(d => {
-                const firm = d.firm.toUpperCase();
-                return (firm.includes('PC') || firm.includes('MM')) && !d.name.toLowerCase().includes('fy1');
-            });
-            
-            // Always assign Feras to Team D if available
-            const ferasDoctor = availableToday.find(d => d.name.toLowerCase().includes('feras'));
-            console.log(`Looking for Feras on ${dayName}:`, ferasDoctor);
-            
-            // Identify FY1 doctors who should ONLY be on Team C
-            const fy1Doctors = availableToday.filter(d => d.name.toLowerCase().includes('fy1'));
-            
-            // Initialize all teams with empty arrays
-            const teamAllocations = {
-                'Pituitary + Epilepsy': [],
-                'Functional': [],
-                'Hydrocephalus': [],
-                'PG/WM': [],
-                'PC/MM': surajDoctor ? [surajDoctor] : (pcDoctors.length > 0 ? [pcDoctors[0]] : []),
-                'Team C': [...fy1Doctors], // FY1s always go to Team C first
-                'Team D': ferasDoctor ? [ferasDoctor] : [] // Feras always on Team D if available
-            };
-
-            // Remove assigned doctors from available pool
-            const assignedToPCMM = surajDoctor || (pcDoctors.length > 0 ? pcDoctors[0] : null);
-            const alreadyAssigned = [
-                ...(assignedToPCMM ? [assignedToPCMM.name] : []),
-                ...fy1Doctors.map(d => d.name),
-                ...(ferasDoctor ? [ferasDoctor.name] : [])
-            ];
-            
-            const remainingDoctors = availableToday.filter(d => !alreadyAssigned.includes(d.name));
-
-            // Assign doctors to their primary teams based on firm codes
-            remainingDoctors.forEach(doctor => {
-                const firm = doctor.firm.toUpperCase();
-                
-                if (['ND', 'HM', 'RB', 'AB', 'AWM', 'ANM'].some(code => firm.includes(code))) {
-                    teamAllocations['Pituitary + Epilepsy'].push(doctor);
-                } else if (['LZ', 'JH', 'HA', 'MK'].some(code => firm.includes(code))) {
-                    teamAllocations['Functional'].push(doctor);
-                } else if (['AT', 'LW'].some(code => firm.includes(code))) {
-                    teamAllocations['Hydrocephalus'].push(doctor);
-                } else if (['PG', 'WM'].some(code => firm.includes(code))) {
-                    teamAllocations['PG/WM'].push(doctor);
-                } else if (['PC', 'MM'].some(code => firm.includes(code)) && !surajDoctor) {
-                    teamAllocations['PC/MM'].push(doctor);
-                } else if (['HS', 'NK', 'RO', 'RM', 'CH', 'LT'].some(code => firm.includes(code))) {
-                    teamAllocations['Team C'].push(doctor);
-                } else if (['PS', 'JA', 'NZ', 'DC', 'VR', 'AR', 'ATC', 'GP', 'IH'].some(code => firm.includes(code))) {
-                    teamAllocations['Team D'].push(doctor);
-                    console.log(`Assigned ${doctor.name} to Team D (firm: ${doctor.firm})`);
-                } else {
-                    // Unassigned doctors - distribute to teams that need help
-                    teamAllocations['Team C'].push(doctor);
-                    console.log(`Assigned ${doctor.name} to Team C as overflow (firm: ${doctor.firm})`);
-                }
-            });
-
-            // Ensure every team has at least one person - redistribute if needed
-            const teamPriority = ['Pituitary + Epilepsy', 'Functional', 'Hydrocephalus', 'PG/WM', 'PC/MM', 'Team C', 'Team D'];
-            const unassignedPool = [];
-            
-            // Collect extra doctors from overstaffed teams
-            Object.entries(teamAllocations).forEach(([teamName, doctors]) => {
-                if (['Functional', 'Team C', 'Team D'].includes(teamName)) {
-                    // These teams can have multiple people
-                    return;
-                }
-                if (doctors.length > 1) {
-                    unassignedPool.push(...doctors.splice(1)); // Keep only 1 for specialist teams
-                }
-            });
-
-            // Fill empty teams first
-            teamPriority.forEach(teamName => {
-                if (teamAllocations[teamName].length === 0 && unassignedPool.length > 0) {
-                    teamAllocations[teamName].push(unassignedPool.shift());
-                }
-            });
-
-            // If still empty teams and available doctors, assign from larger teams
-            teamPriority.forEach(teamName => {
-                if (teamAllocations[teamName].length === 0) {
-                    // Find a team with multiple people to borrow from
-                    const donorTeam = Object.entries(teamAllocations).find(([name, doctors]) => 
-                        doctors.length > 1 && ['Team C', 'Team D', 'Functional'].includes(name)
-                    );
-                    if (donorTeam) {
-                        teamAllocations[teamName].push(donorTeam[1].pop());
-                    }
-                }
-            });
-
-            // Store current day allocation for the team display
-            window.currentDayTeamAllocation = teamAllocations;
-            
-            // Also store special duties for display updates
-            window.currentDaySpecialDuties = {
-                'Clerking Shift': clerkingShifts,
-                'On-call bleep': ldBleeps,
-                'Second on-call': ldSeconds,
-                'Night on-call': nightShifts
-            };
+            // Organize by consultant teams with priority assignments
+            const teamAllocations = organizeTeamsForDay(availableToday);
 
             let counter = 1;
 
@@ -1122,26 +889,24 @@
                 if (doctors.length > 0) {
                     if (teamName === 'Functional') {
                         message += `${counter}. Functional:\n`;
-                        doctors.slice(0, 1).forEach((doctor, index) => { // Only take first doctor
-                            const firstName = doctor.name.split(' ')[0];
-                            message += `      ${firstName}(JH & HA)\n`; // Default to JH & HA
-                        });
+                        const firstName = doctors[0].split(' ')[0];
+                        message += `      ${firstName}(JH & HA)\n`;
                     } else if (teamName === 'Team C') {
                         message += `${counter}. Team C:\n`;
                         doctors.forEach((doctor, index) => {
-                            const firstName = doctor.name.split(' ')[0];
+                            const firstName = doctor.split(' ')[0];
                             let consultantInfo = '';
-                            if (doctor.firm.includes('CH')) consultantInfo = ' (CH)';
-                            else if (doctor.firm.includes('LT') || doctor.firm.includes('NK')) consultantInfo = '(LT & NK)';
-                            else if (doctor.name.toLowerCase().includes('fy1') || doctor.firm.includes('RM')) consultantInfo = ' (RM)';
+                            if (index === 0) consultantInfo = ' (CH)';
+                            else if (index === 1) consultantInfo = '(LT & NK)';
+                            else if (doctor.toLowerCase().includes('fy1')) consultantInfo = ' (RM)';
                             
                             message += `   ${firstName}${consultantInfo}\n`;
                         });
                     } else if (teamName === 'Team D') {
-                        const doctorNames = doctors.map(d => d.name.split(' ')[0]).join(' & ');
+                        const doctorNames = doctors.map(d => d.split(' ')[0]).join(' & ');
                         message += `${counter}. Team D - ${doctorNames}\n`;
                     } else {
-                        const firstName = doctors[0].name.split(' ')[0];
+                        const firstName = doctors[0].split(' ')[0];
                         const consultantCodes = {
                             'Pituitary + Epilepsy': '(ND/HM/RB/AB & AWM/ANM)',
                             'Hydrocephalus': '(AT/LW)',
@@ -1180,154 +945,151 @@
             return message;
         }
 
-        function generateRotatedDailyMessage(formattedDate, dayName) {
-            // Fallback rotation system when no Excel shift data available
+        function organizeTeamsForDay(availableToday) {
+            // Always assign Suraj to PC/MM if available
+            const surajDoctor = availableToday.find(d => d.name.toLowerCase().includes('suraj'));
+            
+            // Always assign Feras to Team D if available
+            const ferasDoctor = availableToday.find(d => d.name.toLowerCase().includes('feras'));
+            
+            // FY1 doctors always go to Team C
+            const fy1Doctors = availableToday.filter(d => d.name.toLowerCase().includes('fy1'));
+            
+            const teamAllocations = {
+                'Pituitary + Epilepsy': [],
+                'Functional': [],
+                'Hydrocephalus': [],
+                'PG/WM': [],
+                'PC/MM': surajDoctor ? [surajDoctor.name] : [],
+                'Team C': fy1Doctors.map(d => d.name),
+                'Team D': ferasDoctor ? [ferasDoctor.name] : []
+            };
+
+            // Remove already assigned doctors
+            const assignedNames = [
+                ...(surajDoctor ? [surajDoctor.name] : []),
+                ...(ferasDoctor ? [ferasDoctor.name] : []),
+                ...fy1Doctors.map(d => d.name)
+            ];
+            
+            const remainingDoctors = availableToday.filter(d => !assignedNames.includes(d.name));
+
+            // Assign remaining doctors based on firm codes
+            remainingDoctors.forEach(doctor => {
+                const firm = doctor.firm.toUpperCase();
+                
+                if (['ND', 'HM', 'RB', 'AB', 'AWM', 'ANM'].some(code => firm.includes(code))) {
+                    teamAllocations['Pituitary + Epilepsy'].push(doctor.name);
+                } else if (['LZ', 'JH', 'HA', 'MK'].some(code => firm.includes(code))) {
+                    teamAllocations['Functional'].push(doctor.name);
+                } else if (['AT', 'LW'].some(code => firm.includes(code))) {
+                    teamAllocations['Hydrocephalus'].push(doctor.name);
+                } else if (['PG', 'WM'].some(code => firm.includes(code))) {
+                    teamAllocations['PG/WM'].push(doctor.name);
+                } else if (['PC', 'MM'].some(code => firm.includes(code)) && !surajDoctor) {
+                    teamAllocations['PC/MM'].push(doctor.name);
+                } else if (['HS', 'NK', 'RO', 'RM', 'CH', 'LT'].some(code => firm.includes(code))) {
+                    teamAllocations['Team C'].push(doctor.name);
+                } else if (['PS', 'JA', 'NZ', 'DC', 'VR', 'AR', 'ATC', 'GP', 'IH'].some(code => firm.includes(code))) {
+                    teamAllocations['Team D'].push(doctor.name);
+                } else {
+                    // Unassigned doctors go to Team C
+                    teamAllocations['Team C'].push(doctor.name);
+                }
+            });
+
+            // Ensure every team has at least one person if possible
+            Object.entries(teamAllocations).forEach(([team, doctors]) => {
+                if (doctors.length === 0 && remainingDoctors.length > 0) {
+                    // Find a team with multiple people to borrow from
+                    const donorTeam = Object.entries(teamAllocations).find(([name, docs]) => 
+                        docs.length > 1 && ['Team C', 'Team D'].includes(name)
+                    );
+                    if (donorTeam) {
+                        teamAllocations[team].push(donorTeam[1].pop());
+                    }
+                }
+            });
+
+            return teamAllocations;
+        }
+
+        function generateBasicMessage(formattedDate, dayName) {
+            if (!currentAllocation) return '';
+
             const allocation = currentAllocation.allocation;
             const specialDuties = currentAllocation.specialDuties;
 
-            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-            const dayOffset = dayNames.indexOf(dayName);
-
             let message = `SHO Team allocations for ${formattedDate} ${dayName}\n\n`;
-
-            const rotatedAllocation = rotateAssignments(allocation, specialDuties, dayOffset);
-
             let counter = 1;
-            
-            if (rotatedAllocation['Pituitary + Epilepsy'] && rotatedAllocation['Pituitary + Epilepsy'].length > 0) {
-                const doctor = rotatedAllocation['Pituitary + Epilepsy'][0].split(' ')[0];
-                message += `${counter}. Pituitary + Epilepsy (ND/HM/RB/AB & AWM/ANM) - ${doctor}\n`;
-                counter++;
-            }
 
-            if (rotatedAllocation['Functional'] && rotatedAllocation['Functional'].length > 0) {
-                message += `${counter}. Functional:\n`;
-                rotatedAllocation['Functional'].forEach((doctor, index) => {
-                    const firstName = doctor.split(' ')[0];
-                    const consultants = index === 0 ? '(JH & HA)' : '(LZ & MK)';
-                    message += `      ${firstName}${consultants}\n`;
-                });
-                counter++;
-            }
+            // Generate team assignments
+            Object.entries(allocation).forEach(([teamName, doctors]) => {
+                if (doctors.length > 0) {
+                    if (teamName === 'Functional') {
+                        message += `${counter}. Functional:\n`;
+                        const firstName = doctors[0].name.split(' ')[0];
+                        message += `      ${firstName}(JH & HA)\n`;
+                    } else if (teamName === 'Team C') {
+                        message += `${counter}. Team C:\n`;
+                        doctors.forEach((doctor, index) => {
+                            const firstName = doctor.name.split(' ')[0];
+                            let consultantInfo = '';
+                            if (index === 0) consultantInfo = ' (CH)';
+                            else if (index === 1) consultantInfo = '(LT & NK)';
+                            else if (doctor.name.toLowerCase().includes('fy1')) consultantInfo = ' (RM)';
+                            
+                            message += `   ${firstName}${consultantInfo}\n`;
+                        });
+                    } else if (teamName === 'Team D') {
+                        const doctorNames = doctors.map(d => d.name.split(' ')[0]).join(' & ');
+                        message += `${counter}. Team D - ${doctorNames}\n`;
+                    } else {
+                        const firstName = doctors[0].name.split(' ')[0];
+                        const consultantCodes = {
+                            'Pituitary + Epilepsy': '(ND/HM/RB/AB & AWM/ANM)',
+                            'Hydrocephalus': '(AT/LW)',
+                            'PG/WM': '',
+                            'PC/MM': ''
+                        };
+                        message += `${counter}. ${teamName} ${consultantCodes[teamName] || ''} - ${firstName}\n`;
+                    }
+                    counter++;
+                }
+            });
 
-            if (rotatedAllocation['Hydrocephalus'] && rotatedAllocation['Hydrocephalus'].length > 0) {
-                const doctor = rotatedAllocation['Hydrocephalus'][0].split(' ')[0];
-                message += `${counter}. Hydrocephalus (AT/LW) - ${doctor}\n`;
-                counter++;
-            }
-
-            if (rotatedAllocation['PG/WM'] && rotatedAllocation['PG/WM'].length > 0) {
-                const doctor = rotatedAllocation['PG/WM'][0].split(' ')[0];
-                message += `${counter}. PG/WM - ${doctor}\n`;
-                counter++;
-            }
-
-            if (rotatedAllocation['PC/MM'] && rotatedAllocation['PC/MM'].length > 0) {
-                const doctor = rotatedAllocation['PC/MM'][0].split(' ')[0];
-                message += `${counter}. PC/MM - ${doctor}\n`;
-                counter++;
-            }
-
-            if (rotatedAllocation['Team C'] && rotatedAllocation['Team C'].length > 0) {
-                message += `${counter}. Team C:\n`;
-                rotatedAllocation['Team C'].forEach((doctor, index) => {
-                    const firstName = doctor.split(' ')[0];
-                    let consultantInfo = '';
-                    if (index === 0) consultantInfo = ' (CH)';
-                    else if (index === 1) consultantInfo = '(LT & NK)';
-                    else if (doctor.toLowerCase().includes('fy1')) consultantInfo = ' (RM)';
-                    
-                    message += `   ${firstName}${consultantInfo}\n`;
-                });
-                counter++;
-            }
-
-            if (rotatedAllocation['Team D'] && rotatedAllocation['Team D'].length > 0) {
-                const doctors = rotatedAllocation['Team D'].map(d => d.split(' ')[0]).join(' & ');
-                message += `${counter}. Team D - ${doctors}\n`;
-            }
-
+            // Add special duties
             message += '\n';
             
-            if (rotatedAllocation['Clerking Shift'] && rotatedAllocation['Clerking Shift'].length > 0) {
-                const doctors = rotatedAllocation['Clerking Shift'].map(d => d.split(' ')[0].toLowerCase()).join(', ');
+            if (specialDuties['Clerking Shift'] && specialDuties['Clerking Shift'].length > 0) {
+                const doctors = specialDuties['Clerking Shift'].map(d => d.name.split(' ')[0].toLowerCase()).join(', ');
                 message += `Clerking Shift: ${doctors}\n`;
             }
 
-            if (rotatedAllocation['On-call bleep'] && rotatedAllocation['On-call bleep'].length > 0) {
-                const doctor = rotatedAllocation['On-call bleep'][0].split(' ')[0].toLowerCase();
+            if (specialDuties['On-call bleep'] && specialDuties['On-call bleep'].length > 0) {
+                const doctor = specialDuties['On-call bleep'][0].name.split(' ')[0].toLowerCase();
                 message += `On-call bleep: ${doctor}\n`;
             }
 
-            if (rotatedAllocation['Second on-call'] && rotatedAllocation['Second on-call'].length > 0) {
-                const doctor = rotatedAllocation['Second on-call'][0].split(' ')[0].toLowerCase();
+            if (specialDuties['Second on-call'] && specialDuties['Second on-call'].length > 0) {
+                const doctor = specialDuties['Second on-call'][0].name.split(' ')[0].toLowerCase();
                 message += `Second on-call: ${doctor}\n`;
             }
 
-            if (rotatedAllocation['Night on-call'] && rotatedAllocation['Night on-call'].length > 0) {
-                const doctor = rotatedAllocation['Night on-call'][0].split(' ')[0];
+            if (specialDuties['Night on-call'] && specialDuties['Night on-call'].length > 0) {
+                const doctor = specialDuties['Night on-call'][0].name.split(' ')[0];
                 message += `Night on-call: ${doctor}`;
             }
 
             return message;
         }
 
-        function rotateAssignments(allocation, specialDuties, dayOffset) {
-            const rotated = {};
-            
-            const allDoctors = [];
-            Object.values(allocation).forEach(team => {
-                team.forEach(doctor => {
-                    if (!doctor.name.toLowerCase().includes('fy1')) {
-                        allDoctors.push(doctor.name);
-                    }
-                });
-            });
-            Object.values(specialDuties).forEach(duty => {
-                duty.forEach(doctor => {
-                    if (!doctor.name.toLowerCase().includes('fy1') && !allDoctors.includes(doctor.name)) {
-                        allDoctors.push(doctor.name);
-                    }
-                });
-            });
-
-            const fy1Doctors = [];
-            Object.values(allocation).forEach(team => {
-                team.forEach(doctor => {
-                    if (doctor.name.toLowerCase().includes('fy1')) {
-                        fy1Doctors.push(doctor.name);
-                    }
-                });
-            });
-
-            const rotatedDoctors = [...allDoctors];
-            for (let i = 0; i < dayOffset; i++) {
-                rotatedDoctors.push(rotatedDoctors.shift());
-            }
-
-            let doctorIndex = 0;
-
-            Object.entries(TEAM_REQUIREMENTS).forEach(([team, requirement]) => {
-                rotated[team] = [];
-                for (let i = 0; i < requirement && doctorIndex < rotatedDoctors.length; i++) {
-                    rotated[team].push(rotatedDoctors[doctorIndex]);
-                    doctorIndex++;
-                }
-                
-                if (team === 'Team C' && fy1Doctors.length > 0) {
-                    rotated[team].push(fy1Doctors[0]);
-                }
-            });
-
-            Object.entries(SPECIAL_DUTIES).forEach(([duty, requirement]) => {
-                rotated[duty] = [];
-                for (let i = 0; i < requirement && doctorIndex < rotatedDoctors.length; i++) {
-                    rotated[duty].push(rotatedDoctors[doctorIndex]);
-                    doctorIndex++;
-                }
-            });
-
-            return rotated;
+        function showAlert(message, type) {
+            const alertsDiv = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.innerHTML = message;
+            alertsDiv.appendChild(alert);
         }
 
         function copyAllMessages() {
@@ -1374,22 +1136,12 @@
                 doctors.forEach(doctor => {
                     ws_data.push(['Consultant Team', team, doctor.name, consultants, doctor.preferred ? 'Yes' : 'No']);
                 });
-                
-                const requirement = TEAM_REQUIREMENTS[team];
-                for (let i = doctors.length; i < requirement; i++) {
-                    ws_data.push(['Consultant Team', team, 'LOCUM NEEDED', consultants, 'No']);
-                }
             });
 
             Object.entries(currentAllocation.specialDuties).forEach(([duty, doctors]) => {
                 doctors.forEach(doctor => {
                     ws_data.push(['Special Duty', duty, doctor.name, '', doctor.preferred ? 'Yes' : 'No']);
                 });
-                
-                const requirement = SPECIAL_DUTIES[duty];
-                for (let i = doctors.length; i < requirement; i++) {
-                    ws_data.push(['Special Duty', duty, 'COVERAGE NEEDED', '', 'No']);
-                }
             });
 
             const ws = XLSX.utils.aoa_to_sheet(ws_data);
