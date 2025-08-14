@@ -842,19 +842,17 @@
                 if (window.currentDayTeamAllocation[fullTeamName]) {
                     const doctors = window.currentDayTeamAllocation[fullTeamName];
                     const requirement = TEAM_REQUIREMENTS[fullTeamName] || 1;
-                    const isUnderStaffed = doctors.length < requirement;
                     const consultantInfo = CONSULTANT_TEAMS[fullTeamName];
                     
-                    // Update the card content
+                    // Update the card content - no individual team warnings
                     card.innerHTML = `
-                        <h3>${fullTeamName} ${isUnderStaffed ? '⚠️' : '✅'}</h3>
+                        <h3>${fullTeamName} ✅</h3>
                         <p><strong>Consultants:</strong> ${consultantInfo ? consultantInfo.consultants.join(', ') : ''}</p>
                         <p><strong>Required:</strong> ${requirement} | <strong>Assigned:</strong> ${doctors.length}</p>
                         <ul class="doctor-list">
                             ${doctors.map(doctor => `
                                 <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${doctor.name}</li>
                             `).join('')}
-                            ${isUnderStaffed ? '<li style="color: #e74c3c; font-style: italic;">⚠️ Needs locum coverage</li>' : ''}
                         </ul>
                     `;
                 }
