@@ -397,7 +397,9 @@
             'oleksii': 'Hydrocephalus',
             'constantinos': 'Team C',
             'mohammed': 'Team D',
-            'redwan': 'Team D'
+            'redwan': 'Team D',
+            'feras': 'Team D', // Now properly detected
+            'danyal': 'Team C' // FY1 always on Team C
         };
 
         document.getElementById('fileInput').addEventListener('change', handleFileSelect);
@@ -936,12 +938,21 @@
             const availableToday = window.doctorShiftData.filter(doctor => {
                 const shift = doctor.shifts[dayKey] || '';
                 const upperShift = shift.toUpperCase();
-                return shift && 
+                
+                // Consider available if they have any shift that's not AL, ZERO, SL, WEISS, or just NIGHT
+                const isAvailable = shift && 
                        !upperShift.includes('AL') && 
                        !upperShift.includes('ZERO') && 
                        !upperShift.includes('SL') && 
                        !upperShift.includes('WEISS') &&
-                       !upperShift.includes('NIGHT');
+                       !upperShift.startsWith('NIGHT') && // Only exclude if it STARTS with NIGHT
+                       shift.trim() !== ''; // Exclude empty shifts
+                
+                if (doctor.name.toLowerCase().includes('michael')) {
+                    console.log(`Michael on ${dayName}: shift="${shift}", available=${isAvailable}`);
+                }
+                
+                return isAvailable;
             });
 
             // Get special duty assignments for this day
@@ -965,8 +976,15 @@
                 return shift.toUpperCase().includes('NIGHT');
             });
 
-            // Always assign Suraj to PC/MM if available
+            // Always assign Suraj to PC/MM if available, otherwise assign PC doctors
             const surajDoctor = availableToday.find(d => d.name.toLowerCase().includes('suraj'));
+            const pcDoctors = availableToday.filter(d => {
+                const firm = d.firm.toUpperCase();
+                return (firm.includes('PC') || firm.includes('MM')) && !d.name.toLowerCase().includes('fy1');
+            });
+            
+            // Identify FY1 doctors who should ONLY be on Team C
+            const fy1Doctors = availableToday.filter(d => d.name.toLowerCase().includes('fy1'));
             
             // Initialize all teams with empty arrays
             const teamAllocations = {
@@ -974,15 +992,19 @@
                 'Functional': [],
                 'Hydrocephalus': [],
                 'PG/WM': [],
-                'PC/MM': surajDoctor ? [surajDoctor] : [],
-                'Team C': [],
+                'PC/MM': surajDoctor ? [surajDoctor] : (pcDoctors.length > 0 ? [pcDoctors[0]] : []),
+                'Team C': [...fy1Doctors], // FY1s always go to Team C first
                 'Team D': []
             };
 
-            // Remove Suraj from available pool if assigned to PC/MM
-            const remainingDoctors = surajDoctor ? 
-                availableToday.filter(d => !d.name.toLowerCase().includes('suraj')) : 
-                availableToday;
+            // Remove assigned doctors from available pool
+            const assignedToPCMM = surajDoctor || (pcDoctors.length > 0 ? pcDoctors[0] : null);
+            const alreadyAssigned = [
+                ...(assignedToPCMM ? [assignedToPCMM.name] : []),
+                ...fy1Doctors.map(d => d.name)
+            ];
+            
+            const remainingDoctors = availableToday.filter(d => !alreadyAssigned.includes(d.name));
 
             // Assign doctors to their primary teams based on firm codes
             remainingDoctors.forEach(doctor => {
@@ -1002,9 +1024,11 @@
                     teamAllocations['Team C'].push(doctor);
                 } else if (['PS', 'JA', 'NZ', 'DC', 'VR', 'AR', 'ATC', 'GP'].some(code => firm.includes(code))) {
                     teamAllocations['Team D'].push(doctor);
+                    console.log(`Assigned ${doctor.name} to Team D (firm: ${doctor.firm})`);
                 } else {
                     // Unassigned doctors - distribute to teams that need help
                     teamAllocations['Team C'].push(doctor);
+                    console.log(`Assigned ${doctor.name} to Team C as overflow (firm: ${doctor.firm})`);
                 }
             });
 
