@@ -799,6 +799,9 @@
             if (allocationDiv && currentAllocation) {
                 const message = generateDailyMessageText(formattedDate, dayName);
                 allocationDiv.textContent = message;
+                
+                // Update the team cards display to match current day
+                updateTeamCardsForCurrentDay();
             }
 
             // Update day button highlighting
@@ -810,6 +813,48 @@
                 } else {
                     button.style.background = 'rgba(255,255,255,0.2)';
                     button.style.fontWeight = 'normal';
+                }
+            });
+        }
+
+        function updateTeamCardsForCurrentDay() {
+            if (!window.currentDayTeamAllocation) return;
+
+            const teamGrid = document.getElementById('teamGrid');
+            if (!teamGrid) return;
+
+            // Find and update existing team cards (not the navigation cards)
+            const teamCards = Array.from(teamGrid.children).filter(card => 
+                card.innerHTML.includes('Consultants:') && 
+                !card.innerHTML.includes('Daily Rota Navigator') &&
+                !card.innerHTML.includes('Custom Date Message')
+            );
+
+            teamCards.forEach(card => {
+                const teamName = card.querySelector('h3').textContent.split(' ')[0] + 
+                               (card.querySelector('h3').textContent.includes('+') ? ' + ' + 
+                                card.querySelector('h3').textContent.split(' + ')[1].split(' ')[0] : '');
+                
+                const fullTeamName = teamName === 'Pituitary' ? 'Pituitary + Epilepsy' : teamName;
+                
+                if (window.currentDayTeamAllocation[fullTeamName]) {
+                    const doctors = window.currentDayTeamAllocation[fullTeamName];
+                    const requirement = TEAM_REQUIREMENTS[fullTeamName] || 1;
+                    const isUnderStaffed = doctors.length < requirement;
+                    const consultantInfo = CONSULTANT_TEAMS[fullTeamName];
+                    
+                    // Update the card content
+                    card.innerHTML = `
+                        <h3>${fullTeamName} ${isUnderStaffed ? '⚠️' : '✅'}</h3>
+                        <p><strong>Consultants:</strong> ${consultantInfo ? consultantInfo.consultants.join(', ') : ''}</p>
+                        <p><strong>Required:</strong> ${requirement} | <strong>Assigned:</strong> ${doctors.length}</p>
+                        <ul class="doctor-list">
+                            ${doctors.map(doctor => `
+                                <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${doctor.name}</li>
+                            `).join('')}
+                            ${isUnderStaffed ? '<li style="color: #e74c3c; font-style: italic;">⚠️ Needs locum coverage</li>' : ''}
+                        </ul>
+                    `;
                 }
             });
         }
@@ -887,7 +932,7 @@
             
             let message = `SHO Team allocations for ${formattedDate} ${dayName}\n\n`;
 
-            // Get doctors working this day (excluding unavailable ones)
+            // Get doctors working this day (including clerking shifts)
             const availableToday = window.doctorShiftData.filter(doctor => {
                 const shift = doctor.shifts[dayKey] || '';
                 const upperShift = shift.toUpperCase();
@@ -923,13 +968,13 @@
             // Always assign Suraj to PC/MM if available
             const surajDoctor = availableToday.find(d => d.name.toLowerCase().includes('suraj'));
             
-            // Organize by consultant teams with priority for consistency
+            // Initialize all teams with empty arrays
             const teamAllocations = {
                 'Pituitary + Epilepsy': [],
                 'Functional': [],
                 'Hydrocephalus': [],
                 'PG/WM': [],
-                'PC/MM': surajDoctor ? [surajDoctor] : [], // Suraj always on PC/MM if available
+                'PC/MM': surajDoctor ? [surajDoctor] : [],
                 'Team C': [],
                 'Team D': []
             };
@@ -959,44 +1004,61 @@
                     teamAllocations['Team D'].push(doctor);
                 } else {
                     // Unassigned doctors - distribute to teams that need help
-                    teamAllocations['Team C'].push(doctor); // Default to Team C for overflow
+                    teamAllocations['Team C'].push(doctor);
                 }
             });
 
-            // Distribute overflow doctors (more than 7 total) to help other teams
-            const totalAssigned = Object.values(teamAllocations).reduce((sum, team) => sum + team.length, 0);
-            if (totalAssigned > 7) {
-                // Find teams that could use extra help
-                const teamsNeedingHelp = ['Functional', 'Team C', 'Team D'];
-                const overflowDoctors = [];
-                
-                // Collect overflow from larger teams
-                Object.entries(teamAllocations).forEach(([teamName, doctors]) => {
-                    if (doctors.length > 2 && !teamsNeedingHelp.includes(teamName)) {
-                        overflowDoctors.push(...doctors.splice(2)); // Keep max 2 per specialty team
+            // Ensure every team has at least one person - redistribute if needed
+            const teamPriority = ['Pituitary + Epilepsy', 'Functional', 'Hydrocephalus', 'PG/WM', 'PC/MM', 'Team C', 'Team D'];
+            const unassignedPool = [];
+            
+            // Collect extra doctors from overstaffed teams
+            Object.entries(teamAllocations).forEach(([teamName, doctors]) => {
+                if (['Functional', 'Team C', 'Team D'].includes(teamName)) {
+                    // These teams can have multiple people
+                    return;
+                }
+                if (doctors.length > 1) {
+                    unassignedPool.push(...doctors.splice(1)); // Keep only 1 for specialist teams
+                }
+            });
+
+            // Fill empty teams first
+            teamPriority.forEach(teamName => {
+                if (teamAllocations[teamName].length === 0 && unassignedPool.length > 0) {
+                    teamAllocations[teamName].push(unassignedPool.shift());
+                }
+            });
+
+            // If still empty teams and available doctors, assign from larger teams
+            teamPriority.forEach(teamName => {
+                if (teamAllocations[teamName].length === 0) {
+                    // Find a team with multiple people to borrow from
+                    const donorTeam = Object.entries(teamAllocations).find(([name, doctors]) => 
+                        doctors.length > 1 && ['Team C', 'Team D', 'Functional'].includes(name)
+                    );
+                    if (donorTeam) {
+                        teamAllocations[teamName].push(donorTeam[1].pop());
                     }
-                });
-                
-                // Redistribute overflow to teams needing help
-                overflowDoctors.forEach((doctor, index) => {
-                    const targetTeam = teamsNeedingHelp[index % teamsNeedingHelp.length];
-                    teamAllocations[targetTeam].push(doctor);
-                });
-            }
+                }
+            });
+
+            // Store current day allocation for the team display
+            window.currentDayTeamAllocation = teamAllocations;
 
             let counter = 1;
 
             // Generate team assignments
             Object.entries(teamAllocations).forEach(([teamName, doctors]) => {
                 if (doctors.length > 0) {
-                    if (teamName === 'Functional' && doctors.length > 0) {
+                    if (teamName === 'Functional') {
                         message += `${counter}. Functional:\n`;
                         doctors.forEach((doctor, index) => {
                             const firstName = doctor.name.split(' ')[0];
                             const consultants = index === 0 ? '(JH & HA)' : '(LZ & MK)';
                             message += `      ${firstName}${consultants}\n`;
                         });
-                    } else if (teamName === 'Team C' && doctors.length > 0) {
+                    } else if (teamName === 'Team C') {
                         message += `${counter}. Team C:\n`;
                         doctors.forEach((doctor, index) => {
                             const firstName = doctor.name.split(' ')[0];
@@ -1007,10 +1069,10 @@
                             
                             message += `   ${firstName}${consultantInfo}\n`;
                         });
-                    } else if (teamName === 'Team D' && doctors.length > 0) {
+                    } else if (teamName === 'Team D') {
                         const doctorNames = doctors.map(d => d.name.split(' ')[0]).join(' & ');
                         message += `${counter}. Team D - ${doctorNames}\n`;
-                    } else if (doctors.length > 0) {
+                    } else {
                         const firstName = doctors[0].name.split(' ')[0];
                         const consultantCodes = {
                             'Pituitary + Epilepsy': '(ND/HM/RB/AB & AWM/ANM)',
