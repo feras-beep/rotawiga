@@ -320,7 +320,7 @@
             <div class="export-section">
                 <button class="button" onclick="exportToExcel()">📊 Export to Excel</button>
                 <button class="button" onclick="printRota()">🖨️ Print Rota</button>
-                <button class="button" onclick="copyAllMessages()">📋 Copy All Daily Messages</button>
+                <button class="button" onclick="copyAllMessages()">📋 Copy All Weekday Messages (Mon-Fri)</button>
             </div>
         </div>
     </div>
@@ -495,6 +495,7 @@
             const doctors = [];
             let currentTeam = '';
             
+            // Extract week starting date from the Excel file
             const weekCommencingRow = data.find(row => 
                 row[0] && row[0].toString().toLowerCase().includes('w/c')
             );
@@ -515,30 +516,58 @@
                 }
             }
             
+            // Parse the specific Excel format and extract actual shift data
             data.forEach((row, index) => {
+                // Check if this row defines a team
                 if (row[0] && row[0].toString().includes('Team ')) {
                     currentTeam = row[0].toString().trim();
                     
+                    // If there's a doctor name in the same row (column B - index 1)
                     if (row[1] && row[1].toString().trim()) {
                         const doctorName = row[1].toString().trim();
                         if (!doctorName.includes('ADMISSIONS') && !doctorName.includes('→') && 
                             !doctorName.includes('Locum Cover')) {
-                            doctors.push(doctorName);
+                            doctors.push({
+                                name: doctorName,
+                                team: currentTeam,
+                                firm: row[2] || '',
+                                shifts: {
+                                    monday: row[4] || '',
+                                    tuesday: row[5] || '',
+                                    wednesday: row[6] || '',
+                                    thursday: row[7] || '',
+                                    friday: row[8] || ''
+                                }
+                            });
                         }
                     }
                 } 
+                // Check for doctors in subsequent rows
                 else if ((!row[0] || row[0].toString().trim() === '') && currentTeam) {
                     if (row[1] && row[1].toString().trim()) {
                         const doctorName = row[1].toString().trim();
                         if (!doctorName.includes('ADMISSIONS') && !doctorName.includes('→') && 
                             !doctorName.includes('Locum Cover')) {
-                            doctors.push(doctorName);
+                            doctors.push({
+                                name: doctorName,
+                                team: currentTeam,
+                                firm: row[2] || '',
+                                shifts: {
+                                    monday: row[4] || '',
+                                    tuesday: row[5] || '',
+                                    wednesday: row[6] || '',
+                                    thursday: row[7] || '',
+                                    friday: row[8] || ''
+                                }
+                            });
                         }
                     }
                 }
             });
             
-            return [...new Set(doctors)];
+            // Return just doctor names for compatibility, but store full data
+            window.doctorShiftData = doctors; // Store for later use
+            return [...new Set(doctors.map(d => d.name))];
         }
 
         function processAllocation() {
@@ -712,7 +741,7 @@
             dayNavCard.style.background = 'linear-gradient(135deg, #6c5ce7, #a29bfe)';
             dayNavCard.style.color = 'white';
             dayNavCard.innerHTML = `
-                <h3>📅 Daily Rota Navigator</h3>
+                <h3>📅 Weekday Rota Navigator (Mon-Fri)</h3>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin: 20px 0;">
                     <button class="button" onclick="previousDay()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">◀ Previous</button>
                     <div id="currentDayDisplay" style="text-align: center; font-size: 1.2rem; font-weight: bold;"></div>
@@ -746,8 +775,8 @@
             const currentDate = new Date(weekStartDate);
             currentDate.setDate(weekStartDate.getDate() + currentDayIndex);
             
-            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-            const dayName = dayNames[currentDayIndex % 7];
+            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+            const dayName = dayNames[currentDayIndex % 5];
             const formattedDate = currentDate.toLocaleDateString('en-GB', { 
                 day: '2-digit', 
                 month: '2-digit', 
@@ -767,12 +796,12 @@
         }
 
         function previousDay() {
-            currentDayIndex = (currentDayIndex - 1 + 7) % 7;
+            currentDayIndex = (currentDayIndex - 1 + 5) % 5;
             updateCurrentDayDisplay();
         }
 
         function nextDay() {
-            currentDayIndex = (currentDayIndex + 1) % 7;
+            currentDayIndex = (currentDayIndex + 1) % 5;
             updateCurrentDayDisplay();
         }
 
@@ -825,10 +854,160 @@
         }
 
         function generateDailyMessageText(formattedDate, dayName) {
+            if (!window.doctorShiftData) {
+                // Fallback to old rotation system if no shift data available
+                return generateRotatedDailyMessage(formattedDate, dayName);
+            }
+
+            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+            const dayKey = dayName.toLowerCase();
+            
+            let message = `SHO Team allocations for ${formattedDate} ${dayName}\n\n`;
+
+            // Get doctors working this day (excluding those with AL, ZERO, SL, WEISS, NIGHT)
+            const availableToday = window.doctorShiftData.filter(doctor => {
+                const shift = doctor.shifts[dayKey] || '';
+                const upperShift = shift.toUpperCase();
+                return shift && 
+                       !upperShift.includes('AL') && 
+                       !upperShift.includes('ZERO') && 
+                       !upperShift.includes('SL') && 
+                       !upperShift.includes('WEISS') &&
+                       !upperShift.includes('NIGHT');
+            });
+
+            // Get special duty assignments for this day
+            const clerkingShifts = window.doctorShiftData.filter(doctor => {
+                const shift = doctor.shifts[dayKey] || '';
+                return shift.startsWith('0700-') || shift.startsWith('07');
+            });
+
+            const ldBleeps = window.doctorShiftData.filter(doctor => {
+                const shift = doctor.shifts[dayKey] || '';
+                return shift.toUpperCase().includes('LD BLEEP') || shift.toUpperCase().includes('LD BLEEPS');
+            });
+
+            const ldSeconds = window.doctorShiftData.filter(doctor => {
+                const shift = doctor.shifts[dayKey] || '';
+                return shift.toUpperCase().includes('LD SECOND');
+            });
+
+            const nightShifts = window.doctorShiftData.filter(doctor => {
+                const shift = doctor.shifts[dayKey] || '';
+                return shift.toUpperCase().includes('NIGHT');
+            });
+
+            // Organize by consultant teams based on firm codes
+            const teamAllocations = {
+                'Pituitary + Epilepsy': availableToday.filter(d => 
+                    ['ND', 'HM', 'RB', 'AB', 'AWM', 'ANM'].some(code => 
+                        d.firm.includes(code)
+                    )
+                ),
+                'Functional': availableToday.filter(d => 
+                    ['LZ', 'JH', 'HA', 'MK'].some(code => 
+                        d.firm.includes(code)
+                    )
+                ),
+                'Hydrocephalus': availableToday.filter(d => 
+                    ['AT', 'LW'].some(code => 
+                        d.firm.includes(code)
+                    )
+                ),
+                'PG/WM': availableToday.filter(d => 
+                    ['PG', 'WM'].some(code => 
+                        d.firm.includes(code)
+                    )
+                ),
+                'PC/MM': availableToday.filter(d => 
+                    ['PC', 'MM'].some(code => 
+                        d.firm.includes(code)
+                    )
+                ),
+                'Team C': availableToday.filter(d => 
+                    ['HS', 'NK', 'RO', 'RM', 'CH', 'LT'].some(code => 
+                        d.firm.includes(code)
+                    )
+                ),
+                'Team D': availableToday.filter(d => 
+                    ['PS', 'JA', 'NZ', 'DC', 'VR', 'AR', 'ATC', 'GP'].some(code => 
+                        d.firm.includes(code)
+                    )
+                )
+            };
+
+            let counter = 1;
+
+            // Generate team assignments
+            Object.entries(teamAllocations).forEach(([teamName, doctors]) => {
+                if (doctors.length > 0) {
+                    if (teamName === 'Functional' && doctors.length > 1) {
+                        message += `${counter}. Functional:\n`;
+                        doctors.forEach((doctor, index) => {
+                            const firstName = doctor.name.split(' ')[0];
+                            const consultants = index === 0 ? '(JH & HA)' : '(LZ & MK)';
+                            message += `      ${firstName}${consultants}\n`;
+                        });
+                    } else if (teamName === 'Team C' && doctors.length > 0) {
+                        message += `${counter}. Team C:\n`;
+                        doctors.forEach((doctor, index) => {
+                            const firstName = doctor.name.split(' ')[0];
+                            let consultantInfo = '';
+                            if (doctor.firm.includes('CH')) consultantInfo = ' (CH)';
+                            else if (doctor.firm.includes('LT') || doctor.firm.includes('NK')) consultantInfo = '(LT & NK)';
+                            else if (doctor.name.toLowerCase().includes('fy1') || doctor.firm.includes('RM')) consultantInfo = ' (RM)';
+                            
+                            message += `   ${firstName}${consultantInfo}\n`;
+                        });
+                    } else if (teamName === 'Team D' && doctors.length > 0) {
+                        const doctorNames = doctors.map(d => d.name.split(' ')[0]).join(' & ');
+                        message += `${counter}. Team D - ${doctorNames}\n`;
+                    } else if (doctors.length > 0) {
+                        const firstName = doctors[0].name.split(' ')[0];
+                        const consultantCodes = {
+                            'Pituitary + Epilepsy': '(ND/HM/RB/AB & AWM/ANM)',
+                            'Hydrocephalus': '(AT/LW)',
+                            'PG/WM': '',
+                            'PC/MM': ''
+                        };
+                        message += `${counter}. ${teamName} ${consultantCodes[teamName] || ''} - ${firstName}\n`;
+                    }
+                    counter++;
+                }
+            });
+
+            // Add special duties
+            message += '\n';
+            
+            if (clerkingShifts.length > 0) {
+                const doctors = clerkingShifts.map(d => d.name.split(' ')[0].toLowerCase()).join(', ');
+                message += `Clerking Shift: ${doctors}\n`;
+            }
+
+            if (ldBleeps.length > 0) {
+                const doctor = ldBleeps[0].name.split(' ')[0].toLowerCase();
+                message += `On-call bleep: ${doctor}\n`;
+            }
+
+            if (ldSeconds.length > 0) {
+                const doctor = ldSeconds[0].name.split(' ')[0].toLowerCase();
+                message += `Second on-call: ${doctor}\n`;
+            }
+
+            if (nightShifts.length > 0) {
+                const doctor = nightShifts[0].name.split(' ')[0];
+                message += `Night on-call: ${doctor}`;
+            }
+
+            return message;
+        }
+
+        function generateRotatedDailyMessage(formattedDate, dayName) {
+            // Fallback rotation system when no Excel shift data available
             const allocation = currentAllocation.allocation;
             const specialDuties = currentAllocation.specialDuties;
 
-            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
             const dayOffset = dayNames.indexOf(dayName);
 
             let message = `SHO Team allocations for ${formattedDate} ${dayName}\n\n`;
@@ -980,9 +1159,9 @@
             }
 
             let allMessages = '';
-            const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
-            for (let i = 0; i < 7; i++) {
+            for (let i = 0; i < 5; i++) {
                 const currentDate = new Date(weekStartDate);
                 currentDate.setDate(weekStartDate.getDate() + i);
                 
@@ -994,11 +1173,11 @@
                 });
 
                 allMessages += generateDailyMessageText(formattedDate, dayName);
-                if (i < 6) allMessages += '\n' + '='.repeat(50) + '\n\n';
+                if (i < 4) allMessages += '\n' + '='.repeat(50) + '\n\n';
             }
 
             navigator.clipboard.writeText(allMessages).then(() => {
-                showAlert('✅ All weekly messages copied to clipboard!', 'success');
+                showAlert('✅ All weekday messages (Mon-Fri) copied to clipboard!', 'success');
             });
         }
 
