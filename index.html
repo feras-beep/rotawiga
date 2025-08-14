@@ -246,6 +246,39 @@
             height: 100px;
             resize: vertical;
         }
+        
+        .day-nav-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+        }
+        
+        .day-nav-button {
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .day-nav-button:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+        
+        .current-day-info {
+            text-align: center;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -295,8 +328,9 @@
     <script>
         let currentDoctors = [];
         let currentAllocation = null;
+        let weekStartDate = new Date('2025-08-18');
+        let currentDayIndex = 0;
 
-        // Consultant team assignments and specialties
         const CONSULTANT_TEAMS = {
             'Pituitary + Epilepsy': {
                 consultants: ['ND', 'HM', 'RB', 'AB', 'AWM', 'ANM'],
@@ -337,7 +371,6 @@
             }
         };
 
-        // Special duty assignments
         const SPECIAL_DUTIES = {
             'Clerking Shift': 2,
             'On-call bleep': 1,
@@ -345,7 +378,6 @@
             'Night on-call': 1
         };
 
-        // Team requirements (updated to match consultant structure)
         const TEAM_REQUIREMENTS = {
             'Pituitary + Epilepsy': 1,
             'Functional': 2,
@@ -356,7 +388,6 @@
             'Team D': 2
         };
 
-        // Preferred assignments (updated for consultant teams)
         const PREFERRED_ASSIGNMENTS = {
             'suraj': 'PC/MM',
             'sanchita': 'Night on-call',
@@ -421,12 +452,10 @@
                 const arrayBuffer = await file.arrayBuffer();
                 const workbook = XLSX.read(arrayBuffer);
                 
-                // Find the sho rota sheet - look for exact name match first
                 let shoRotaSheet = workbook.SheetNames.find(name => 
                     name.toLowerCase() === 'sho rota'
                 );
                 
-                // If not found, try other variations
                 if (!shoRotaSheet) {
                     shoRotaSheet = workbook.SheetNames.find(name => 
                         name.toLowerCase().includes('sho') && name.toLowerCase().includes('rota')
@@ -443,7 +472,6 @@
                 const worksheet = workbook.Sheets[shoRotaSheet];
                 const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
                 
-                // Extract doctor names (assuming they're in a column)
                 currentDoctors = extractDoctorNames(data);
                 
                 console.log('Extracted doctors:', currentDoctors);
@@ -451,13 +479,11 @@
                 
                 if (currentDoctors.length === 0) {
                     showAlert('No doctor names found in the Excel file. Please check the format or try manual entry.', 'error');
-                    // Show some sample data for debugging
                     console.log('Sample data from sheet:', data.slice(0, 10));
                     return;
                 }
 
                 showAlert(`✅ Successfully extracted ${currentDoctors.length} doctors from "${shoRotaSheet}" sheet`, 'success');
-
                 processAllocation();
                 
             } catch (error) {
@@ -469,13 +495,30 @@
             const doctors = [];
             let currentTeam = '';
             
-            // Parse the specific Excel format we identified
+            const weekCommencingRow = data.find(row => 
+                row[0] && row[0].toString().toLowerCase().includes('w/c')
+            );
+            
+            if (weekCommencingRow) {
+                const dateMatch = weekCommencingRow[0].match(/(\d{1,2}(?:st|nd|rd|th)?\s+\w+\s+\d{4})/i);
+                if (dateMatch) {
+                    try {
+                        const dateStr = dateMatch[1].replace(/(\d+)(st|nd|rd|th)/, '$1');
+                        const parsedDate = new Date(dateStr);
+                        if (!isNaN(parsedDate.getTime())) {
+                            weekStartDate = parsedDate;
+                            console.log('Extracted week start date:', weekStartDate.toDateString());
+                        }
+                    } catch (e) {
+                        console.log('Could not parse date, using default');
+                    }
+                }
+            }
+            
             data.forEach((row, index) => {
-                // Check if this row defines a team
                 if (row[0] && row[0].toString().includes('Team ')) {
                     currentTeam = row[0].toString().trim();
                     
-                    // If there's a doctor name in the same row (column B - index 1)
                     if (row[1] && row[1].toString().trim()) {
                         const doctorName = row[1].toString().trim();
                         if (!doctorName.includes('ADMISSIONS') && !doctorName.includes('→') && 
@@ -484,7 +527,6 @@
                         }
                     }
                 } 
-                // Check for doctors in subsequent rows (where team column is empty but doctor name exists)
                 else if ((!row[0] || row[0].toString().trim() === '') && currentTeam) {
                     if (row[1] && row[1].toString().trim()) {
                         const doctorName = row[1].toString().trim();
@@ -496,7 +538,6 @@
                 }
             });
             
-            // Remove duplicates and return
             return [...new Set(doctors)];
         }
 
@@ -506,22 +547,18 @@
                 return;
             }
 
-            // Filter out FY1 doctors
             const availableDoctors = currentDoctors.filter(doctor => 
                 !doctor.toLowerCase().includes('fy1')
             );
 
-            // Check if we have enough doctors
             const totalRequired = Object.values(TEAM_REQUIREMENTS).reduce((sum, req) => sum + req, 0);
             const needsLocum = availableDoctors.length < totalRequired;
 
-            // Allocate doctors to teams
             const result = allocateDoctorsToTeams(availableDoctors);
             const allocation = result.allocation;
             const specialDuties = result.specialDuties;
             currentAllocation = { allocation, specialDuties };
 
-            // Display results
             displayResults(allocation, specialDuties, needsLocum, availableDoctors.length, totalRequired);
         }
 
@@ -529,7 +566,6 @@
             const allocation = {};
             const specialDuties = {};
             
-            // Initialize allocation structure
             Object.keys(CONSULTANT_TEAMS).forEach(team => {
                 allocation[team] = [];
             });
@@ -541,14 +577,12 @@
             const availableDoctors = [...doctors];
             const assigned = new Set();
 
-            // First, assign preferred doctors to their preferred roles
             Object.entries(PREFERRED_ASSIGNMENTS).forEach(([doctorKey, preferredRole]) => {
                 const doctor = availableDoctors.find(d => 
                     d.toLowerCase().includes(doctorKey.toLowerCase())
                 );
                 
                 if (doctor && !assigned.has(doctor)) {
-                    // Check if it's a special duty
                     if (SPECIAL_DUTIES[preferredRole] && specialDuties[preferredRole].length < SPECIAL_DUTIES[preferredRole]) {
                         specialDuties[preferredRole].push({
                             name: doctor,
@@ -556,7 +590,6 @@
                         });
                         assigned.add(doctor);
                     }
-                    // Check if it's a consultant team
                     else if (CONSULTANT_TEAMS[preferredRole] && allocation[preferredRole].length < TEAM_REQUIREMENTS[preferredRole]) {
                         allocation[preferredRole].push({
                             name: doctor,
@@ -567,7 +600,6 @@
                 }
             });
 
-            // Then assign remaining doctors to consultant teams
             const unassignedDoctors = availableDoctors.filter(d => !assigned.has(d));
             
             Object.entries(TEAM_REQUIREMENTS).forEach(([team, requirement]) => {
@@ -581,7 +613,6 @@
                 }
             });
 
-            // Fill remaining special duties
             Object.entries(SPECIAL_DUTIES).forEach(([duty, requirement]) => {
                 while (specialDuties[duty].length < requirement && unassignedDoctors.length > 0) {
                     const doctor = unassignedDoctors.shift();
@@ -602,12 +633,10 @@
             const statsGrid = document.getElementById('statsGrid');
             const teamGrid = document.getElementById('teamGrid');
 
-            // Clear previous results
             alertsDiv.innerHTML = '';
             statsGrid.innerHTML = '';
             teamGrid.innerHTML = '';
 
-            // Show alerts
             if (needsLocum) {
                 const shortfall = requiredCount - availableCount;
                 showAlert(`⚠️ LOCUM REQUIRED: You need ${shortfall} additional doctor${shortfall > 1 ? 's' : ''} to meet all team requirements`, 'warning');
@@ -615,7 +644,6 @@
                 showAlert('✅ All teams can be adequately staffed with current doctors', 'success');
             }
 
-            // Show stats
             const totalAssignments = Object.values(TEAM_REQUIREMENTS).reduce((sum, req) => sum + req, 0) + 
                                    Object.values(SPECIAL_DUTIES).reduce((sum, req) => sum + req, 0);
             
@@ -638,7 +666,6 @@
                 </div>
             `;
 
-            // Show consultant team allocations
             Object.entries(allocation).forEach(([team, doctors]) => {
                 const requirement = TEAM_REQUIREMENTS[team];
                 const isUnderStaffed = doctors.length < requirement;
@@ -660,7 +687,6 @@
                 teamGrid.appendChild(teamCard);
             });
 
-            // Show special duties
             Object.entries(specialDuties).forEach(([duty, doctors]) => {
                 const requirement = SPECIAL_DUTIES[duty];
                 const isUnderStaffed = doctors.length < requirement;
@@ -681,23 +707,84 @@
                 teamGrid.appendChild(dutyCard);
             });
 
-            // Add daily allocation message generator
+            const dayNavCard = document.createElement('div');
+            dayNavCard.className = 'team-card';
+            dayNavCard.style.background = 'linear-gradient(135deg, #6c5ce7, #a29bfe)';
+            dayNavCard.style.color = 'white';
+            dayNavCard.innerHTML = `
+                <h3>📅 Daily Rota Navigator</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 20px 0;">
+                    <button class="button" onclick="previousDay()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">◀ Previous</button>
+                    <div id="currentDayDisplay" style="text-align: center; font-size: 1.2rem; font-weight: bold;"></div>
+                    <button class="button" onclick="nextDay()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">Next ▶</button>
+                </div>
+                <div id="currentDayAllocation" style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; font-family: monospace; white-space: pre-line; font-size: 0.9rem;"></div>
+                <button class="button" onclick="copyCurrentDay()" style="background: white; color: #6c5ce7; margin-top: 10px;">📋 Copy Today's Message</button>
+            `;
+            teamGrid.appendChild(dayNavCard);
+
             const messageCard = document.createElement('div');
             messageCard.className = 'team-card';
             messageCard.style.background = 'linear-gradient(135deg, #74b9ff, #0984e3)';
             messageCard.style.color = 'white';
             messageCard.innerHTML = `
-                <h3>📅 Daily Allocation Message</h3>
+                <h3>📅 Custom Date Message</h3>
                 <div class="input-group" style="margin: 15px 0;">
-                    <label for="dateInput" style="color: white;">Select Date:</label>
+                    <label for="dateInput" style="color: white;">Select Custom Date:</label>
                     <input type="date" id="dateInput" value="${new Date().toISOString().split('T')[0]}" style="color: black;">
                 </div>
-                <button class="button" onclick="generateDailyMessage()" style="background: white; color: #0984e3;">📝 Generate Daily Message</button>
+                <button class="button" onclick="generateDailyMessage()" style="background: white; color: #0984e3;">📝 Generate Custom Message</button>
                 <div id="dailyMessage" style="margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 8px; font-family: monospace; white-space: pre-line; display: none;"></div>
             `;
             teamGrid.appendChild(messageCard);
 
+            updateCurrentDayDisplay();
             resultsDiv.classList.remove('hidden');
+        }
+
+        function updateCurrentDayDisplay() {
+            const currentDate = new Date(weekStartDate);
+            currentDate.setDate(weekStartDate.getDate() + currentDayIndex);
+            
+            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const dayName = dayNames[currentDayIndex % 7];
+            const formattedDate = currentDate.toLocaleDateString('en-GB', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: '2-digit' 
+            });
+
+            const displayDiv = document.getElementById('currentDayDisplay');
+            if (displayDiv) {
+                displayDiv.innerHTML = `${dayName}<br>${formattedDate}`;
+            }
+
+            const allocationDiv = document.getElementById('currentDayAllocation');
+            if (allocationDiv && currentAllocation) {
+                const message = generateDailyMessageText(formattedDate, dayName);
+                allocationDiv.textContent = message;
+            }
+        }
+
+        function previousDay() {
+            currentDayIndex = (currentDayIndex - 1 + 7) % 7;
+            updateCurrentDayDisplay();
+        }
+
+        function nextDay() {
+            currentDayIndex = (currentDayIndex + 1) % 7;
+            updateCurrentDayDisplay();
+        }
+
+        function copyCurrentDay() {
+            const allocationDiv = document.getElementById('currentDayAllocation');
+            if (allocationDiv && allocationDiv.textContent) {
+                navigator.clipboard.writeText(allocationDiv.textContent).then(() => {
+                    showAlert('✅ Current day message copied to clipboard!', 'success');
+                });
+            } else {
+                showAlert('No allocation data to copy', 'error');
+            }
         }
 
         function showAlert(message, type) {
@@ -726,12 +813,10 @@
 
             const message = generateDailyMessageText(formattedDate, dayName);
 
-            // Display the message
             const messageDiv = document.getElementById('dailyMessage');
             messageDiv.textContent = message;
             messageDiv.style.display = 'block';
 
-            // Add copy button functionality
             messageDiv.onclick = function() {
                 navigator.clipboard.writeText(message).then(() => {
                     showAlert('✅ Daily message copied to clipboard!', 'success');
@@ -743,26 +828,21 @@
             const allocation = currentAllocation.allocation;
             const specialDuties = currentAllocation.specialDuties;
 
-            // Get day of week (0 = Sunday, 1 = Monday, etc.)
-            const date = new Date(formattedDate.split('/').reverse().join('-'));
-            const dayOfWeek = date.getDay();
+            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const dayOffset = dayNames.indexOf(dayName);
 
             let message = `SHO Team allocations for ${formattedDate} ${dayName}\n\n`;
 
-            // Create rotated assignments based on day of week
-            const rotatedAllocation = rotateAssignments(allocation, specialDuties, dayOfWeek);
+            const rotatedAllocation = rotateAssignments(allocation, specialDuties, dayOffset);
 
-            // Generate consultant team assignments
             let counter = 1;
             
-            // Pituitary + Epilepsy
             if (rotatedAllocation['Pituitary + Epilepsy'] && rotatedAllocation['Pituitary + Epilepsy'].length > 0) {
                 const doctor = rotatedAllocation['Pituitary + Epilepsy'][0].split(' ')[0];
                 message += `${counter}. Pituitary + Epilepsy (ND/HM/RB/AB & AWM/ANM) - ${doctor}\n`;
                 counter++;
             }
 
-            // Functional
             if (rotatedAllocation['Functional'] && rotatedAllocation['Functional'].length > 0) {
                 message += `${counter}. Functional:\n`;
                 rotatedAllocation['Functional'].forEach((doctor, index) => {
@@ -773,28 +853,24 @@
                 counter++;
             }
 
-            // Hydrocephalus
             if (rotatedAllocation['Hydrocephalus'] && rotatedAllocation['Hydrocephalus'].length > 0) {
                 const doctor = rotatedAllocation['Hydrocephalus'][0].split(' ')[0];
                 message += `${counter}. Hydrocephalus (AT/LW) - ${doctor}\n`;
                 counter++;
             }
 
-            // PG/WM
             if (rotatedAllocation['PG/WM'] && rotatedAllocation['PG/WM'].length > 0) {
                 const doctor = rotatedAllocation['PG/WM'][0].split(' ')[0];
                 message += `${counter}. PG/WM - ${doctor}\n`;
                 counter++;
             }
 
-            // PC/MM
             if (rotatedAllocation['PC/MM'] && rotatedAllocation['PC/MM'].length > 0) {
                 const doctor = rotatedAllocation['PC/MM'][0].split(' ')[0];
                 message += `${counter}. PC/MM - ${doctor}\n`;
                 counter++;
             }
 
-            // Team C
             if (rotatedAllocation['Team C'] && rotatedAllocation['Team C'].length > 0) {
                 message += `${counter}. Team C:\n`;
                 rotatedAllocation['Team C'].forEach((doctor, index) => {
@@ -809,13 +885,11 @@
                 counter++;
             }
 
-            // Team D
             if (rotatedAllocation['Team D'] && rotatedAllocation['Team D'].length > 0) {
                 const doctors = rotatedAllocation['Team D'].map(d => d.split(' ')[0]).join(' & ');
                 message += `${counter}. Team D - ${doctors}\n`;
             }
 
-            // Special duties (also rotated)
             message += '\n';
             
             if (rotatedAllocation['Clerking Shift'] && rotatedAllocation['Clerking Shift'].length > 0) {
@@ -844,7 +918,6 @@
         function rotateAssignments(allocation, specialDuties, dayOffset) {
             const rotated = {};
             
-            // Get all available doctors from all teams
             const allDoctors = [];
             Object.values(allocation).forEach(team => {
                 team.forEach(doctor => {
@@ -861,7 +934,6 @@
                 });
             });
 
-            // Find FY1 doctors separately
             const fy1Doctors = [];
             Object.values(allocation).forEach(team => {
                 team.forEach(doctor => {
@@ -871,7 +943,6 @@
                 });
             });
 
-            // Rotate the doctor pool based on day
             const rotatedDoctors = [...allDoctors];
             for (let i = 0; i < dayOffset; i++) {
                 rotatedDoctors.push(rotatedDoctors.shift());
@@ -879,7 +950,6 @@
 
             let doctorIndex = 0;
 
-            // Assign rotated doctors to teams
             Object.entries(TEAM_REQUIREMENTS).forEach(([team, requirement]) => {
                 rotated[team] = [];
                 for (let i = 0; i < requirement && doctorIndex < rotatedDoctors.length; i++) {
@@ -887,13 +957,11 @@
                     doctorIndex++;
                 }
                 
-                // Add FY1 to Team C if needed
                 if (team === 'Team C' && fy1Doctors.length > 0) {
                     rotated[team].push(fy1Doctors[0]);
                 }
             });
 
-            // Assign to special duties
             Object.entries(SPECIAL_DUTIES).forEach(([duty, requirement]) => {
                 rotated[duty] = [];
                 for (let i = 0; i < requirement && doctorIndex < rotatedDoctors.length; i++) {
@@ -911,16 +979,12 @@
                 return;
             }
 
-            const today = new Date();
-            const monday = new Date(today);
-            monday.setDate(today.getDate() - today.getDay() + 1); // Get Monday of current week
-
             let allMessages = '';
             const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
             for (let i = 0; i < 7; i++) {
-                const currentDate = new Date(monday);
-                currentDate.setDate(monday.getDate() + i);
+                const currentDate = new Date(weekStartDate);
+                currentDate.setDate(weekStartDate.getDate() + i);
                 
                 const dayName = daysOfWeek[i];
                 const formattedDate = currentDate.toLocaleDateString('en-GB', { 
@@ -948,27 +1012,23 @@
                 ['Assignment Type', 'Team/Duty', 'Doctor', 'Consultants', 'Preferred Assignment']
             ];
 
-            // Add consultant team assignments
             Object.entries(currentAllocation.allocation).forEach(([team, doctors]) => {
                 const consultants = CONSULTANT_TEAMS[team]?.consultants.join(', ') || '';
                 doctors.forEach(doctor => {
                     ws_data.push(['Consultant Team', team, doctor.name, consultants, doctor.preferred ? 'Yes' : 'No']);
                 });
                 
-                // Add empty rows for missing positions
                 const requirement = TEAM_REQUIREMENTS[team];
                 for (let i = doctors.length; i < requirement; i++) {
                     ws_data.push(['Consultant Team', team, 'LOCUM NEEDED', consultants, 'No']);
                 }
             });
 
-            // Add special duties
             Object.entries(currentAllocation.specialDuties).forEach(([duty, doctors]) => {
                 doctors.forEach(doctor => {
                     ws_data.push(['Special Duty', duty, doctor.name, '', doctor.preferred ? 'Yes' : 'No']);
                 });
                 
-                // Add empty rows for missing positions
                 const requirement = SPECIAL_DUTIES[duty];
                 for (let i = doctors.length; i < requirement; i++) {
                     ws_data.push(['Special Duty', duty, 'COVERAGE NEEDED', '', 'No']);
@@ -1008,7 +1068,7 @@
                 <body>
                     <div class="header">
                         <h1>Neurosurgical Consultant Rota</h1>
-                        <p>Week Commencing: ${new Date().toLocaleDateString()}</p>
+                        <p>Week Commencing: ${weekStartDate.toLocaleDateString()}</p>
                     </div>
                     
                     <h2>Consultant Teams</h2>
