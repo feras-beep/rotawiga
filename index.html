@@ -1,4 +1,106 @@
-<!DOCTYPE html>
+function exportToExcel() {
+            if (!currentAllocation) {
+                showAlert('No allocation data to export', 'error');
+                return;
+            }
+
+            const ws_data = [
+                ['Assignment Type', 'Team/Duty', 'Doctor', 'Consultants', 'Preferred Assignment']
+            ];
+
+            // Add consultant team assignments
+            Object.entries(currentAllocation.allocation).forEach(([team, doctors]) => {
+                const consultants = CONSULTANT_TEAMS[team]?.consultants.join(', ') || '';
+                doctors.forEach(doctor => {
+                    ws_data.push(['Consultant Team', team, doctor.name, consultants, doctor.preferred ? 'Yes' : 'No']);
+                });
+                
+                // Add empty rows for missing positions
+                const requirement = TEAM_REQUIREMENTS[team];
+                for (let i = doctors.length; i < requirement; i++) {
+                    ws_data.push(['Consultant Team', team, 'LOCUM NEEDED', consultants, 'No']);
+                }
+            });
+
+            // Add special duties
+            Object.entries(currentAllocation.specialDuties).forEach(([duty, doctors]) => {
+                doctors.forEach(doctor => {
+                    ws_data.push(['Special Duty', duty, doctor.name, '', doctor.preferred ? 'Yes' : 'No']);
+                });
+                
+                // Add empty rows for missing positions
+                const requirement = SPECIAL_DUTIES[duty];
+                for (let i = doctors.length; i < requirement; i++) {
+                    ws_data.push(['Special Duty', duty, 'COVERAGE NEEDED', '', 'No']);
+                }
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet(ws_data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Consultant Rota Allocation');
+
+            const filename = `Neurosurgical_Consultant_Rota_${new Date().toISOString().split('T')[0]}.xlsx`;
+            XLSX.writeFile(wb, filename);
+        }
+
+        function printRota() {
+            if (!currentAllocation) {
+                showAlert('No allocation data to print', 'error');
+                return;
+            }
+
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Neurosurgical Consultant Rota</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; }
+                        .header { text-align: center; margin-bottom: 30px; }
+                        .team { margin-bottom: 20px; page-break-inside: avoid; }
+                        .team h3 { background: #f0f0f0; padding: 10px; margin: 0; }
+                        .team ul { list-style: none; padding: 10px; margin: 0; border: 1px solid #ddd; }
+                        .team li { padding: 5px 0; }
+                        .preferred { font-weight: bold; }
+                        .special-duty { background: #fff3cd; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1>Neurosurgical Consultant Rota</h1>
+                        <p>Week Commencing: ${new Date().toLocaleDateString()}</p>
+                    </div>
+                    
+                    <h2>Consultant Teams</h2>
+                    ${Object.entries(currentAllocation.allocation).map(([team, doctors]) => `
+                        <div class="team">
+                            <h3>${team} (${doctors.length}/${TEAM_REQUIREMENTS[team]})</h3>
+                            <p><strong>Consultants:</strong> ${CONSULTANT_TEAMS[team]?.consultants.join(', ') || ''}</p>
+                            <ul>
+                                ${doctors.map(doctor => `
+                                    <li class="${doctor.preferred ? 'preferred' : ''}">${doctor.name}</li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    `).join('')}
+                    
+                    <h2>Special Duties</h2>
+                    ${Object.entries(currentAllocation.specialDuties).map(([duty, doctors]) => `
+                        <div class="team special-duty">
+                            <h3>${duty} (${doctors.length}/${SPECIAL_DUTIES[duty]})</h3>
+                            <ul>
+                                ${doctors.map(doctor => `
+                                    <li class="${doctor.preferred ? 'preferred' : ''}">${doctor.name}</li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    `).join('')}
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
+        }<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -287,6 +389,7 @@
             <div class="export-section">
                 <button class="button" onclick="exportToExcel()">📊 Export to Excel</button>
                 <button class="button" onclick="printRota()">🖨️ Print Rota</button>
+                <button class="button" onclick="copyAllMessages()">📋 Copy All Daily Messages</button>
             </div>
         </div>
     </div>
@@ -295,20 +398,77 @@
         let currentDoctors = [];
         let currentAllocation = null;
 
-        // Team requirements
-        const TEAM_REQUIREMENTS = {
-            'Team A': 2,
-            'Team B': 3,
-            'Team C': 1,
-            'Team D': 1
+        // Consultant team assignments and specialties
+        const CONSULTANT_TEAMS = {
+            'Pituitary + Epilepsy': {
+                consultants: ['ND', 'HM', 'RB', 'AB', 'AWM', 'ANM'],
+                requiredDoctors: 1,
+                specialty: 'Pituitary + Epilepsy'
+            },
+            'Functional': {
+                consultants: ['JH', 'HA', 'LZ', 'MK'],
+                requiredDoctors: 2,
+                specialty: 'Functional',
+                subTeams: ['JH & HA', 'LZ & MK']
+            },
+            'Hydrocephalus': {
+                consultants: ['AT', 'LW'],
+                requiredDoctors: 1,
+                specialty: 'Hydrocephalus'
+            },
+            'PG/WM': {
+                consultants: ['PG', 'WM'],
+                requiredDoctors: 1,
+                specialty: 'PG/WM'
+            },
+            'PC/MM': {
+                consultants: ['PC', 'MM'],
+                requiredDoctors: 1,
+                specialty: 'PC/MM'
+            },
+            'Team C': {
+                consultants: ['CH', 'LT', 'NK', 'RM'],
+                requiredDoctors: 3,
+                specialty: 'Team C',
+                includesFY1: true
+            },
+            'Team D': {
+                consultants: ['Team D'],
+                requiredDoctors: 2,
+                specialty: 'Team D'
+            }
         };
 
-        // Preferred assignments
+        // Special duty assignments
+        const SPECIAL_DUTIES = {
+            'Clerking Shift': 2,
+            'On-call bleep': 1,
+            'Second on-call': 1,
+            'Night on-call': 1
+        };
+
+        // Team requirements (updated to match consultant structure)
+        const TEAM_REQUIREMENTS = {
+            'Pituitary + Epilepsy': 1,
+            'Functional': 2,
+            'Hydrocephalus': 1,
+            'PG/WM': 1,
+            'PC/MM': 1,
+            'Team C': 3,
+            'Team D': 2
+        };
+
+        // Preferred assignments (updated for consultant teams)
         const PREFERRED_ASSIGNMENTS = {
-            'suraj': 'Team B',
-            'sanchita': 'Team B',
-            'george': 'Team A',
-            'feras': 'Team D'  // Note: Feras may not always be available
+            'suraj': 'PC/MM',
+            'sanchita': 'Night on-call',
+            'george': 'Functional',
+            'michael': 'Pituitary + Epilepsy',
+            'sabrina': 'PG/WM',
+            'oleksii': 'Hydrocephalus',
+            'constantinos': 'Team C',
+            'mohammed': 'Team D',
+            'redwan': 'Team D'
         };
 
         document.getElementById('fileInput').addEventListener('change', handleFileSelect);
@@ -328,7 +488,8 @@
                 'Munashe Veremu', 'Hassan Bin Ajmal', 'Michael Bandrivskyi', 'Taha Albohassan', 
                 'George Hudson', 'Sanchita Bhatia', 'Redwan Jabbar', 'Suraj Sennik', 
                 'Hamza Salhab', 'Sandie Eiras', 'Oleksii Goncharuk', 'Shamimur Rahman',
-                'Constantinos Thoma', 'Danyal Khan FY1', 'Sabrina Smith', 'Ioannis Koukoulithras'
+                'Constantinos Thoma', 'Danyal Khan FY1', 'Sabrina Smith', 'Ioannis Koukoulithras',
+                'Mohammed Lester', 'Saikat Ahmed'
             ];
             currentDoctors = sampleDoctors;
             document.getElementById('doctorList').value = sampleDoctors.join('\n');
@@ -457,33 +618,49 @@
             const needsLocum = availableDoctors.length < totalRequired;
 
             // Allocate doctors to teams
-            const allocation = allocateDoctorsToTeams(availableDoctors);
-            currentAllocation = allocation;
+            const result = allocateDoctorsToTeams(availableDoctors);
+            const allocation = result.allocation;
+            const specialDuties = result.specialDuties;
+            currentAllocation = { allocation, specialDuties };
 
             // Display results
-            displayResults(allocation, needsLocum, availableDoctors.length, totalRequired);
+            displayResults(allocation, specialDuties, needsLocum, availableDoctors.length, totalRequired);
         }
 
         function allocateDoctorsToTeams(doctors) {
-            const allocation = {
-                'Team A': [],
-                'Team B': [],
-                'Team C': [],
-                'Team D': []
-            };
+            const allocation = {};
+            const specialDuties = {};
+            
+            // Initialize allocation structure
+            Object.keys(CONSULTANT_TEAMS).forEach(team => {
+                allocation[team] = [];
+            });
+            
+            Object.keys(SPECIAL_DUTIES).forEach(duty => {
+                specialDuties[duty] = [];
+            });
 
             const availableDoctors = [...doctors];
             const assigned = new Set();
 
-            // First, assign preferred doctors
-            Object.entries(PREFERRED_ASSIGNMENTS).forEach(([doctorName, preferredTeam]) => {
+            // First, assign preferred doctors to their preferred roles
+            Object.entries(PREFERRED_ASSIGNMENTS).forEach(([doctorKey, preferredRole]) => {
                 const doctor = availableDoctors.find(d => 
-                    d.toLowerCase().includes(doctorName.toLowerCase())
+                    d.toLowerCase().includes(doctorKey.toLowerCase())
                 );
                 
                 if (doctor && !assigned.has(doctor)) {
-                    if (allocation[preferredTeam].length < TEAM_REQUIREMENTS[preferredTeam]) {
-                        allocation[preferredTeam].push({
+                    // Check if it's a special duty
+                    if (SPECIAL_DUTIES[preferredRole] && specialDuties[preferredRole].length < SPECIAL_DUTIES[preferredRole]) {
+                        specialDuties[preferredRole].push({
+                            name: doctor,
+                            preferred: true
+                        });
+                        assigned.add(doctor);
+                    }
+                    // Check if it's a consultant team
+                    else if (CONSULTANT_TEAMS[preferredRole] && allocation[preferredRole].length < TEAM_REQUIREMENTS[preferredRole]) {
+                        allocation[preferredRole].push({
                             name: doctor,
                             preferred: true
                         });
@@ -492,7 +669,7 @@
                 }
             });
 
-            // Then assign remaining doctors
+            // Then assign remaining doctors to consultant teams
             const unassignedDoctors = availableDoctors.filter(d => !assigned.has(d));
             
             Object.entries(TEAM_REQUIREMENTS).forEach(([team, requirement]) => {
@@ -506,10 +683,22 @@
                 }
             });
 
-            return allocation;
+            // Fill remaining special duties
+            Object.entries(SPECIAL_DUTIES).forEach(([duty, requirement]) => {
+                while (specialDuties[duty].length < requirement && unassignedDoctors.length > 0) {
+                    const doctor = unassignedDoctors.shift();
+                    specialDuties[duty].push({
+                        name: doctor,
+                        preferred: false
+                    });
+                    assigned.add(doctor);
+                }
+            });
+
+            return { allocation, specialDuties };
         }
 
-        function displayResults(allocation, needsLocum, availableCount, requiredCount) {
+        function displayResults(allocation, specialDuties, needsLocum, availableCount, requiredCount) {
             const resultsDiv = document.getElementById('results');
             const alertsDiv = document.getElementById('alerts');
             const statsGrid = document.getElementById('statsGrid');
@@ -529,34 +718,39 @@
             }
 
             // Show stats
+            const totalAssignments = Object.values(TEAM_REQUIREMENTS).reduce((sum, req) => sum + req, 0) + 
+                                   Object.values(SPECIAL_DUTIES).reduce((sum, req) => sum + req, 0);
+            
             statsGrid.innerHTML = `
                 <div class="stat-card">
                     <h4>Available Doctors</h4>
                     <div class="number">${availableCount}</div>
                 </div>
                 <div class="stat-card">
-                    <h4>Required Doctors</h4>
-                    <div class="number">${requiredCount}</div>
+                    <h4>Total Assignments</h4>
+                    <div class="number">${totalAssignments}</div>
                 </div>
                 <div class="stat-card">
-                    <h4>Teams</h4>
-                    <div class="number">${Object.keys(TEAM_REQUIREMENTS).length}</div>
+                    <h4>Consultant Teams</h4>
+                    <div class="number">${Object.keys(CONSULTANT_TEAMS).length}</div>
                 </div>
                 <div class="stat-card">
-                    <h4>Locums Needed</h4>
-                    <div class="number">${Math.max(0, requiredCount - availableCount)}</div>
+                    <h4>Special Duties</h4>
+                    <div class="number">${Object.keys(SPECIAL_DUTIES).length}</div>
                 </div>
             `;
 
-            // Show team allocations
+            // Show consultant team allocations
             Object.entries(allocation).forEach(([team, doctors]) => {
                 const requirement = TEAM_REQUIREMENTS[team];
                 const isUnderStaffed = doctors.length < requirement;
+                const consultantInfo = CONSULTANT_TEAMS[team];
                 
                 const teamCard = document.createElement('div');
                 teamCard.className = 'team-card';
                 teamCard.innerHTML = `
                     <h3>${team} ${isUnderStaffed ? '⚠️' : '✅'}</h3>
+                    <p><strong>Consultants:</strong> ${consultantInfo.consultants.join(', ')}</p>
                     <p><strong>Required:</strong> ${requirement} | <strong>Assigned:</strong> ${doctors.length}</p>
                     <ul class="doctor-list">
                         ${doctors.map(doctor => `
@@ -567,6 +761,43 @@
                 `;
                 teamGrid.appendChild(teamCard);
             });
+
+            // Show special duties
+            Object.entries(specialDuties).forEach(([duty, doctors]) => {
+                const requirement = SPECIAL_DUTIES[duty];
+                const isUnderStaffed = doctors.length < requirement;
+                
+                const dutyCard = document.createElement('div');
+                dutyCard.className = 'team-card';
+                dutyCard.style.background = 'linear-gradient(135deg, #ffeaa7, #fab1a0)';
+                dutyCard.innerHTML = `
+                    <h3>🔔 ${duty} ${isUnderStaffed ? '⚠️' : '✅'}</h3>
+                    <p><strong>Required:</strong> ${requirement} | <strong>Assigned:</strong> ${doctors.length}</p>
+                    <ul class="doctor-list">
+                        ${doctors.map(doctor => `
+                            <li class="${doctor.preferred ? 'preferred-doctor' : ''}">${doctor.name} ${doctor.preferred ? '⭐' : ''}</li>
+                        `).join('')}
+                        ${isUnderStaffed ? '<li style="color: #e74c3c; font-style: italic;">⚠️ Needs coverage</li>' : ''}
+                    </ul>
+                `;
+                teamGrid.appendChild(dutyCard);
+            });
+
+            // Add daily allocation message generator
+            const messageCard = document.createElement('div');
+            messageCard.className = 'team-card';
+            messageCard.style.background = 'linear-gradient(135deg, #74b9ff, #0984e3)';
+            messageCard.style.color = 'white';
+            messageCard.innerHTML = `
+                <h3>📅 Daily Allocation Message</h3>
+                <div class="input-group" style="margin: 15px 0;">
+                    <label for="dateInput" style="color: white;">Select Date:</label>
+                    <input type="date" id="dateInput" value="${new Date().toISOString().split('T')[0]}" style="color: black;">
+                </div>
+                <button class="button" onclick="generateDailyMessage()" style="background: white; color: #0984e3;">📝 Generate Daily Message</button>
+                <div id="dailyMessage" style="margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 8px; font-family: monospace; white-space: pre-line; display: none;"></div>
+            `;
+            teamGrid.appendChild(messageCard);
 
             resultsDiv.classList.remove('hidden');
         }
@@ -609,47 +840,163 @@
             XLSX.writeFile(wb, filename);
         }
 
-        function printRota() {
+        function generateDailyMessage() {
             if (!currentAllocation) {
-                showAlert('No allocation data to print', 'error');
+                showAlert('No allocation data available. Please process a rota first.', 'error');
                 return;
             }
 
-            const printWindow = window.open('', '_blank');
-            printWindow.document.write(`
-                <html>
-                <head>
-                    <title>Neurosurgical Rota</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; margin: 20px; }
-                        .header { text-align: center; margin-bottom: 30px; }
-                        .team { margin-bottom: 20px; page-break-inside: avoid; }
-                        .team h3 { background: #f0f0f0; padding: 10px; margin: 0; }
-                        .team ul { list-style: none; padding: 10px; margin: 0; border: 1px solid #ddd; }
-                        .team li { padding: 5px 0; }
-                        .preferred { font-weight: bold; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <h1>Neurosurgical Rota</h1>
-                        <p>Week Commencing: ${new Date().toLocaleDateString()}</p>
-                    </div>
-                    ${Object.entries(currentAllocation).map(([team, doctors]) => `
-                        <div class="team">
-                            <h3>${team} (${doctors.length}/${TEAM_REQUIREMENTS[team]})</h3>
-                            <ul>
-                                ${doctors.map(doctor => `
-                                    <li class="${doctor.preferred ? 'preferred' : ''}">${doctor.name}</li>
-                                `).join('')}
-                            </ul>
-                        </div>
-                    `).join('')}
-                </body>
-                </html>
-            `);
-            printWindow.document.close();
-            printWindow.print();
+            const dateInput = document.getElementById('dateInput');
+            const selectedDate = new Date(dateInput.value);
+            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const dayName = dayNames[selectedDate.getDay()];
+            const formattedDate = selectedDate.toLocaleDateString('en-GB', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: '2-digit' 
+            });
+
+            const message = generateDailyMessageText(formattedDate, dayName);
+
+            // Display the message
+            const messageDiv = document.getElementById('dailyMessage');
+            messageDiv.textContent = message;
+            messageDiv.style.display = 'block';
+
+            // Add copy button functionality
+            messageDiv.onclick = function() {
+                navigator.clipboard.writeText(message).then(() => {
+                    showAlert('✅ Daily message copied to clipboard!', 'success');
+                });
+            };
+        }
+
+        function copyAllMessages() {
+            if (!currentAllocation) {
+                showAlert('No allocation data available. Please process a rota first.', 'error');
+                return;
+            }
+
+            const today = new Date();
+            const monday = new Date(today);
+            monday.setDate(today.getDate() - today.getDay() + 1); // Get Monday of current week
+
+            let allMessages = '';
+            const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+            for (let i = 0; i < 7; i++) {
+                const currentDate = new Date(monday);
+                currentDate.setDate(monday.getDate() + i);
+                
+                const dayName = daysOfWeek[i];
+                const formattedDate = currentDate.toLocaleDateString('en-GB', { 
+                    day: '2-digit', 
+                    month: '2-digit', 
+                    year: '2-digit' 
+                });
+
+                allMessages += generateDailyMessageText(formattedDate, dayName);
+                if (i < 6) allMessages += '\n' + '='.repeat(50) + '\n\n';
+            }
+
+            navigator.clipboard.writeText(allMessages).then(() => {
+                showAlert('✅ All weekly messages copied to clipboard!', 'success');
+            });
+        }
+
+        function generateDailyMessageText(formattedDate, dayName) {
+            const allocation = currentAllocation.allocation;
+            const specialDuties = currentAllocation.specialDuties;
+
+            let message = `SHO Team allocations for ${formattedDate} ${dayName}\n\n`;
+
+            // Generate consultant team assignments
+            let counter = 1;
+            
+            // Pituitary + Epilepsy
+            if (allocation['Pituitary + Epilepsy'] && allocation['Pituitary + Epilepsy'].length > 0) {
+                const doctor = allocation['Pituitary + Epilepsy'][0].name.split(' ')[0];
+                message += `${counter}. Pituitary + Epilepsy (ND/HM/RB/AB & AWM/ANM) - ${doctor}\n`;
+                counter++;
+            }
+
+            // Functional
+            if (allocation['Functional'] && allocation['Functional'].length > 0) {
+                message += `${counter}. Functional:\n`;
+                allocation['Functional'].forEach((doctor, index) => {
+                    const firstName = doctor.name.split(' ')[0];
+                    const consultants = index === 0 ? '(JH & HA)' : '(LZ & MK)';
+                    message += `      ${firstName}${consultants}\n`;
+                });
+                counter++;
+            }
+
+            // Hydrocephalus
+            if (allocation['Hydrocephalus'] && allocation['Hydrocephalus'].length > 0) {
+                const doctor = allocation['Hydrocephalus'][0].name.split(' ')[0];
+                message += `${counter}. Hydrocephalus (AT/LW) - ${doctor}\n`;
+                counter++;
+            }
+
+            // PG/WM
+            if (allocation['PG/WM'] && allocation['PG/WM'].length > 0) {
+                const doctor = allocation['PG/WM'][0].name.split(' ')[0];
+                message += `${counter}. PG/WM - ${doctor}\n`;
+                counter++;
+            }
+
+            // PC/MM
+            if (allocation['PC/MM'] && allocation['PC/MM'].length > 0) {
+                const doctor = allocation['PC/MM'][0].name.split(' ')[0];
+                message += `${counter}. PC/MM - ${doctor}\n`;
+                counter++;
+            }
+
+            // Team C
+            if (allocation['Team C'] && allocation['Team C'].length > 0) {
+                message += `${counter}. Team C:\n`;
+                allocation['Team C'].forEach((doctor, index) => {
+                    const firstName = doctor.name.split(' ')[0];
+                    let consultantInfo = '';
+                    if (index === 0) consultantInfo = ' (CH)';
+                    else if (index === 1) consultantInfo = '(LT & NK)';
+                    else if (doctor.name.toLowerCase().includes('fy1')) consultantInfo = ' (RM)';
+                    
+                    message += `   ${firstName}${consultantInfo}\n`;
+                });
+                counter++;
+            }
+
+            // Team D
+            if (allocation['Team D'] && allocation['Team D'].length > 0) {
+                const doctors = allocation['Team D'].map(d => d.name.split(' ')[0]).join(' & ');
+                message += `${counter}. Team D - ${doctors}\n`;
+            }
+
+            // Special duties
+            message += '\n';
+            
+            if (specialDuties['Clerking Shift'] && specialDuties['Clerking Shift'].length > 0) {
+                const doctors = specialDuties['Clerking Shift'].map(d => d.name.split(' ')[0].toLowerCase()).join(', ');
+                message += `Clerking Shift: ${doctors}\n`;
+            }
+
+            if (specialDuties['On-call bleep'] && specialDuties['On-call bleep'].length > 0) {
+                const doctor = specialDuties['On-call bleep'][0].name.split(' ')[0].toLowerCase();
+                message += `On-call bleep: ${doctor}\n`;
+            }
+
+            if (specialDuties['Second on-call'] && specialDuties['Second on-call'].length > 0) {
+                const doctor = specialDuties['Second on-call'][0].name.split(' ')[0].toLowerCase();
+                message += `Second on-call: ${doctor}\n`;
+            }
+
+            if (specialDuties['Night on-call'] && specialDuties['Night on-call'].length > 0) {
+                const doctor = specialDuties['Night on-call'][0].name.split(' ')[0];
+                message += `Night on-call: ${doctor}`;
+            }
+
+            return message;
         }
     </script>
 </body>
