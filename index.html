@@ -252,7 +252,7 @@
     <div class="container">
         <div class="header">
             <h1>🏥 Neurosurgical Rota Manager</h1>
-            <p>Automated weekly Resident doctor team allocation system</p>
+            <p>Automated weekly consultant team allocation system</p>
         </div>
         
         <div class="upload-section">
@@ -778,6 +778,7 @@
             
             const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
             const dayName = dayNames[currentDayIndex % 5];
+            const dayKey = dayName.toLowerCase();
             const formattedDate = currentDate.toLocaleDateString('en-GB', { 
                 day: '2-digit', 
                 month: '2-digit', 
@@ -795,6 +796,9 @@
                 allocationDiv.textContent = message;
             }
 
+            // Update stats to show daily availability
+            updateDailyStats(dayKey);
+
             // Update day button highlighting
             const dayButtons = document.querySelectorAll('[onclick^="goToDay"]');
             dayButtons.forEach((button, index) => {
@@ -806,6 +810,60 @@
                     button.style.fontWeight = 'normal';
                 }
             });
+        }
+
+        function updateDailyStats(dayKey) {
+            if (!window.doctorShiftData) return;
+
+            const statsGrid = document.getElementById('statsGrid');
+            if (!statsGrid) return;
+
+            // Get daily availability for each day
+            const dailyAvailability = {};
+            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+            
+            dayNames.forEach(day => {
+                const dayKeyLocal = day.toLowerCase();
+                const availableToday = window.doctorShiftData.filter(doctor => {
+                    const shift = doctor.shifts[dayKeyLocal] || '';
+                    const upperShift = shift.toUpperCase();
+                    return shift && 
+                           !upperShift.includes('AL') && 
+                           !upperShift.includes('ZERO') && 
+                           !upperShift.includes('SL') && 
+                           !upperShift.includes('WEISS') &&
+                           !upperShift.startsWith('NIGHT') &&
+                           shift.trim() !== '' &&
+                           !doctor.name.toLowerCase().includes('fy1'); // Exclude FY1 from count
+                });
+                dailyAvailability[day] = availableToday.length;
+            });
+
+            // Highlight current day
+            const currentDay = dayNames[currentDayIndex % 5];
+            
+            statsGrid.innerHTML = `
+                <div class="stat-card" style="background: ${currentDay === 'Monday' ? 'linear-gradient(135deg, #74b9ff, #0984e3)' : 'linear-gradient(135deg, #667eea, #764ba2)'}">
+                    <h4>Monday Available</h4>
+                    <div class="number">${dailyAvailability['Monday'] || 0}</div>
+                </div>
+                <div class="stat-card" style="background: ${currentDay === 'Tuesday' ? 'linear-gradient(135deg, #74b9ff, #0984e3)' : 'linear-gradient(135deg, #667eea, #764ba2)'}">
+                    <h4>Tuesday Available</h4>
+                    <div class="number">${dailyAvailability['Tuesday'] || 0}</div>
+                </div>
+                <div class="stat-card" style="background: ${currentDay === 'Wednesday' ? 'linear-gradient(135deg, #74b9ff, #0984e3)' : 'linear-gradient(135deg, #667eea, #764ba2)'}">
+                    <h4>Wednesday Available</h4>
+                    <div class="number">${dailyAvailability['Wednesday'] || 0}</div>
+                </div>
+                <div class="stat-card" style="background: ${currentDay === 'Thursday' ? 'linear-gradient(135deg, #74b9ff, #0984e3)' : 'linear-gradient(135deg, #667eea, #764ba2)'}">
+                    <h4>Thursday Available</h4>
+                    <div class="number">${dailyAvailability['Thursday'] || 0}</div>
+                </div>
+                <div class="stat-card" style="background: ${currentDay === 'Friday' ? 'linear-gradient(135deg, #74b9ff, #0984e3)' : 'linear-gradient(135deg, #667eea, #764ba2)'}">
+                    <h4>Friday Available</h4>
+                    <div class="number">${dailyAvailability['Friday'] || 0}</div>
+                </div>
+            `;
         }
 
         function previousDay() {
